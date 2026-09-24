@@ -85,8 +85,18 @@ def carregar_dados_viagens_json() -> dict[str, Any]:
 
 def salvar_dados_viagens_json(dados_completos: dict[str, Any]) -> None:
     """Persiste a base hierárquica em static/data/viagens.json com lock_arquivo_json e indentação de 2 espaços."""
-    # TODO (Aluno 4): Implementar escrita segura no arquivo JSON com lock_arquivo_json
-    pass
+    with lock_arquivo_json:
+        dados_completos["atualizado_em"] = datetime.now().isoformat()
+        dados_completos["total_usuarios"] = len(dados_completos.get("usuarios", {}))
+        dados_completos["total_roteiros"] = sum(
+            len(usuario.get("roteiros", []))
+            for usuario in dados_completos.get("usuarios", {}).values()
+        )
+
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        with open(VIAGENS_FILE, "w", encoding="utf-8") as arquivo:
+            json.dump(dados_completos, arquivo, ensure_ascii=False, indent=2)
 
 
 def obter_viagens_usuario(user_id: str) -> list[dict[str, Any]]:
