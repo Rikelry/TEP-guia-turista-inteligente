@@ -50,9 +50,10 @@ lock_requisicoes = threading.Lock()
 
 def sanitizar_entrada(texto: str, max_len: int = 80) -> str:
     """Higieniza entradas de texto removendo tags HTML, caracteres de controle e espaços extras."""
-    # TODO (Aluno 4): Implementar a sanitização de texto via regex r'<[^>]*>'
-    pass
-
+    texto = re.sub(r"<[^>]*>", "", texto)
+    texto = re.sub(r"[\x00-\x1F\x7F]", "", texto)
+    texto = " ".join(texto.split())
+    return texto[:max_len]
 
 def criar_estrutura_padrao_viagens() -> dict[str, Any]:
     """Retorna a estrutura inicial do payload JSON de viagens com metadados e provedores."""
