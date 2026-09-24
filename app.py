@@ -115,8 +115,23 @@ def adicionar_viagem_usuario(
     perfil_usuario: dict[str, Any] | None = None,
 ) -> None:
     """Adiciona um novo roteiro: na memória para visitante ou grava no JSON para usuário logado."""
-    # TODO (Aluno 4): Implementar inserção de novo roteiro na estrutura de dados
-    pass
+    if user_id.startswith("visitante_"):
+        viagens_visitante_memoria.setdefault(user_id, []).append(item)
+        return
+
+    dados = carregar_dados_viagens_json()
+    usuarios = dados.setdefault("usuarios", {})
+    usuario = usuarios.setdefault(
+        user_id,
+        {
+            "nome": (perfil_usuario or {}).get("nome", ""),
+            "email": (perfil_usuario or {}).get("email", ""),
+            "roteiros": [],
+        },
+    )
+
+    usuario.setdefault("roteiros", []).append(item)
+    salvar_dados_viagens_json(dados)
 
 
 def remover_viagem_usuario(user_id: str, viagem_id: str) -> None:
