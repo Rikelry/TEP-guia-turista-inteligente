@@ -245,8 +245,7 @@ def metodo_nao_permitido(error):
 @app.errorhandler(404)
 def pagina_nao_encontrada(error):
     """Fallback para rotas inexistentes redirecionando suavemente para a página principal."""
-    # TODO (Aluno 4): Interceptar erro 404 e redirecionar suavemente para url_for('index')
-    pass
+    return redirect(url_for("index"))
 
 
 if __name__ == "__main__":
