@@ -239,8 +239,7 @@ def ver_viagens_json():
 @app.errorhandler(405)
 def metodo_nao_permitido(error):
     """Fallback para acessos GET em rotas POST (ex: digitar /viagens/criar na barra de endereços)."""
-    # TODO (Aluno 4): Interceptar erro 405 e redirecionar suavemente para url_for('index')
-    pass
+    return redirect(url_for("index"))
 
 
 @app.errorhandler(404)
