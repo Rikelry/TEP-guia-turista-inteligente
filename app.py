@@ -75,8 +75,12 @@ def criar_estrutura_padrao_viagens() -> dict[str, Any]:
 
 def carregar_dados_viagens_json() -> dict[str, Any]:
     """Lê a base completa de viagens de static/data/viagens.json de forma thread-safe com lock_arquivo_json."""
-    # TODO (Aluno 4): Implementar leitura segura do JSON com lock_arquivo_json
-    pass
+    with lock_arquivo_json:
+        if not VIAGENS_FILE.exists():
+            return criar_estrutura_padrao_viagens()
+
+        with open(VIAGENS_FILE, "r", encoding="utf-8") as arquivo:
+            return json.load(arquivo)
 
 
 def salvar_dados_viagens_json(dados_completos: dict[str, Any]) -> None:
