@@ -9,25 +9,25 @@ Aplicação web desenvolvida com o microframework **Flask** e Python moderno par
 ### 1. Clonar o Repositório e Acessar a Pasta
 
 ```bash
-git clone https://github.com/maykolsampaio/guia-turista-inteligente.git
-cd guia-turista-inteligente
+git clone https://github.com/Rikelry/TEP-guia-turista-inteligente.git
+cd TEP-guia-turista-inteligente
 ```
 
 ---
 
 ## 2. Criar e Ativar o Ambiente Virtual (`.venv`)
 
-=== "Linux / macOS"
-    ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate
-    ```
+* **Linux/macOS (Bash/Zsh)**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-=== "Windows (PowerShell)"
-    ```powershell
-    python -m venv .venv
-    .\.venv\Scripts\Activate.ps1
-    ```
+* **Windows (PowerShell)**
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
 
 ---
 
@@ -44,19 +44,19 @@ pip install -r requirements.txt
 
 Configure as variáveis no seu terminal:
 
-=== "Linux / macOS"
-    ```bash
-    export GEMINI_API_KEY="SUA_CHAVE_GEMINI_AQUI"
-    export GOOGLE_CLIENT_ID="776335673676-dk7od4ljhh43bio4bppf94i8ou0u9v9i.apps.googleusercontent.com"
-    export PORT="8001"
-    ```
+* **Linux/macOS (Bash/Zsh)**
+```bash
+export GEMINI_API_KEY="SUA_CHAVE_GEMINI_AQUI"
+export GOOGLE_CLIENT_ID="776335673676-dk7od4ljhh43bio4bppf94i8ou0u9v9i.apps.googleusercontent.com"
+export PORT="8001"
+```
 
-=== "Windows (PowerShell)"
-    ```powershell
-    $env:GEMINI_API_KEY="SUA_CHAVE_GEMINI_AQUI"
-    $env:GOOGLE_CLIENT_ID="776335673676-dk7od4ljhh43bio4bppf94i8ou0u9v9i.apps.googleusercontent.com"
-    $env:PORT="8001"
-    ```
+* **Windows (PowerShell)**
+```powershell
+$env:GEMINI_API_KEY="SUA_CHAVE_GEMINI_AQUI"
+$env:GOOGLE_CLIENT_ID="776335673676-dk7od4ljhh43bio4bppf94i8ou0u9v9i.apps.googleusercontent.com"
+$env:PORT="8001"
+```
 
 > **Obtenção da Chave Gemini:** Acesse o [Google AI Studio](https://aistudio.google.com/), crie sua chave e defina na variável `GEMINI_API_KEY`.
 
@@ -76,20 +76,23 @@ Acesse a aplicação no navegador em:
 ## 📂 Estrutura do Projeto
 
 ```text
-├── app.py                 # [A IMPLEMENTAR] Aplicação Flask (Autenticação Google no Python com Sessão, SSR e Rotas)
-├── config.py              # Constantes, UFs do Brasil, Client ID do Google e variáveis de ambiente
-├── services.py            # [A IMPLEMENTAR] Integrações com APIs externas via HTTPX (Open-Meteo, OSRM e validação de token Google OAuth)
-├── planejamento.py        # [A IMPLEMENTAR] Módulo de IA Gemini para geração de guia turístico e gastronomia
-├── templates/
-│   └── index.html         # Frontend Server-Side Rendering (Jinja2, Google Login URI, Cards e Accordion)
-├── static/
-│   ├── css/style.css      # Estilização responsiva em CSS
-│   ├── js/app.js          # Comportamento de interface (Accordion e bloqueio de cliques)
-│   └── data/
-│       ├── estados_brasil.json # Mapeamento oficial das 27 UFs do Brasil
-│       └── viagens.json        # Persistência em JSON dos roteiros dos usuários logados
-├── requirements.txt       # Lista de dependências Python
-└── README.md              # Documentação e instruções de execução
+.
+├── app.py                      # [A IMPLEMENTAR] Aplicação Flask (Autenticação Google no Python com Sessão, SSR e Rotas)
+├── config.py                   # Constantes, UFs do Brasil, Client ID do Google e variáveis de ambiente
+├── planejamento.py             # [A IMPLEMENTAR] Módulo de IA Gemini para geração de guia turístico e gastronomia
+├── README.md                   # Documentação e instruções de execução
+├── requirements.txt            # Lista de dependências Python
+├── services.py                 # [A IMPLEMENTAR] Integrações com APIs externas via HTTPX (Open-Meteo, OSRM e validação de token Google OAuth)
+├── static
+│   ├── css
+│   │   └── style.css           # Estilização responsiva em CSS
+│   ├── data
+│   │   ├── estados_brasil.json # Mapeamento oficial das 27 UFs do Brasil
+│   │   └── viagens.json        # Persistência em JSON dos roteiros dos usuários logados
+│   └── js
+│       └── app.js              # Comportamento de interface (Accordion e bloqueio de cliques)
+└── templates
+    └── index.html              # Frontend Server-Side Rendering (Jinja2, Google Login URI, Cards e Accordion)
 ```
 
 ---
