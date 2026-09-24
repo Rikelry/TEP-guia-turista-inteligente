@@ -1,5 +1,6 @@
 """Aplicação Flask Principal - Guia do Turista Inteligente (API Gateway em Python)."""
 
+import contextlib
 import hmac
 import json
 import os
@@ -8,6 +9,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
+from functools import wraps
 from typing import Any
 
 import httpx
@@ -272,7 +274,7 @@ def google_callback():
     return redirect(url_for("index"))  # PRG
 
 
-@app.route("/auth/demo", methods=["POST"])
+@app.route("/auth/demo", methods=["GET"])
 def login_demo():
     """Modo Visitante para desenvolvimento e testes locais."""
     _iniciar_sessao(
@@ -287,7 +289,7 @@ def login_demo():
     return redirect(url_for("index"))  # PRG
 
 
-@app.route("/auth/logout", methods=["POST"])
+@app.route("/auth/logout", methods=["GET"])
 def logout():
     """Encerra a sessão e descarta a memória de visitante."""
     usuario = usuario_atual()
@@ -322,22 +324,26 @@ def criar_viagem():
         with httpx.Client() as client:
             latitude, longitude, uf = buscar_coordenadas(client, cidade_nome, uf_informada)
 
-        if latitude == 0.0 and longitude == 0.0:
-            flash("Cidade não encontrada no Brasil.", "warning")
-            return redirect(url_for("index"))
+            if latitude == 0.0 and longitude == 0.0:
+                flash("Cidade não encontrada no Brasil.", "warning")
+                return redirect(url_for("index"))
 
-        # TODO: se a viagem gerar um roteiro (planejamento.py / Gemini), chame aqui,
-        # DENTRO do lock_requisicoes (é a parte lenta) e FORA do lock_arquivo_json.
+            ja_existe = any(
+                v.get("nome", "").lower() == cidade_nome.lower()
+                and v.get("uf", "").upper() == uf.upper()
+                for v in obter_viagens_usuario(usuario["id"])
+            )
 
-        ja_existe = any(
-            v.get("nome", "").lower() == cidade_nome.lower()
-            and v.get("uf", "").upper() == uf.upper()
-            for v in obter_viagens_usuario(usuario["id"])
-        )
+            if ja_existe:
+                flash("Essa viagem já está na sua lista.", "info")  # idempotência por conteúdo
+                return redirect(url_for("index"))
 
-        if ja_existe:
-            flash("Essa viagem já está na sua lista.", "info")  # idempotência por conteúdo
-            return redirect(url_for("index"))
+            # Orquestração das funções do Aluno 2: clima, percurso e roteiro/guia do destino.
+            # A implementação interna dessas funções é responsabilidade do Aluno 2;
+            # aqui o gateway apenas consome o resultado no fluxo correto.
+            clima = obter_clima(client, latitude, longitude)
+            percurso = obter_percurso(client, latitude, longitude)
+            guia_destino = obter_guia_destino_com_diagnostico(cidade_nome, uf)
 
         adicionar_viagem_usuario(
             usuario["id"],
@@ -347,6 +353,9 @@ def criar_viagem():
                 "uf": uf,
                 "latitude": latitude,
                 "longitude": longitude,
+                "clima": clima,
+                "percurso": percurso,
+                "guia_destino": guia_destino,
                 "criado_em": datetime.now(timezone.utc).isoformat(),
             },
             perfil_usuario=usuario,
