@@ -1,16 +1,29 @@
 """Aplicação Flask Principal - Guia do Turista Inteligente (API Gateway em Python)."""
 
+import contextlib
+import hmac
 import json
 import os
 import re
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+from functools import wraps
 from typing import Any
 
 import httpx
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Flask,
+    abort,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 from config import (
     DATA_DIR,
@@ -24,7 +37,7 @@ from services import (
     buscar_coordenadas,
     obter_clima,
     obter_percurso,
-    verificar_token_google,
+  verificar_token_google
 )
 
 app = Flask(__name__)
@@ -162,47 +175,217 @@ def remover_viagem_usuario(user_id: str, viagem_id: str) -> None:
 # ==============================================================================
 
 
+# --- Deduplicação de cliques (idempotência por requisição em andamento) -----
+requisicoes_ativas: set[str] = set()
+_lock_estado_requisicoes = threading.Lock()
+
+
+@contextlib.contextmanager
+def lock_requisicoes(chave: str):
+    """Context manager de deduplicação por chave (ex: 'criar:<user_id>').
+
+    Rende True se a chave estava livre (processa normalmente) ou False se já
+    existe uma requisição idêntica em andamento (deve abortar com aviso).
+    """
+    with _lock_estado_requisicoes:
+        livre = chave not in requisicoes_ativas
+        if livre:
+            requisicoes_ativas.add(chave)
+    try:
+        yield livre
+    finally:
+        if livre:
+            with _lock_estado_requisicoes:
+                requisicoes_ativas.discard(chave)
+
+
+# --- Sessão ------------------------------------------------------------------
+def usuario_atual() -> dict[str, Any] | None:
+    """Retorna o dicionário do usuário logado na sessão atual, ou None."""
+    return session.get("usuario")
+
+
+def _iniciar_sessao(dados_usuario: dict[str, Any]) -> None:
+    """Grava os dados do usuário (Google ou visitante) na sessão Flask."""
+    session["usuario"] = dados_usuario
+    session.permanent = True
+
+
+def descartar_viagens_visitante(usuario: dict[str, Any]) -> None:
+    """Remove da memória o roteiro do visitante ao encerrar a sessão."""
+    viagens_visitante_memoria.pop(usuario["id"], None)
+
+
+def login_obrigatorio(view_func):
+    """Decorator: exige sessão ativa; sem ela, redireciona pra index."""
+
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if not usuario_atual():
+            flash("Você precisa entrar para continuar.", "warning")
+            return redirect(url_for("index"))
+        return view_func(*args, **kwargs)
+
+    return wrapper
+
+
+# --- Rotas ---------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def index():
     """Renderiza a página principal (SSR com Jinja2)."""
-    # TODO (Aluno 3): Recuperar usuário da sessão, buscar viagens e renderizar index.html
-    pass
+    usuario = usuario_atual()
+    viagens = obter_viagens_usuario(usuario["id"]) if usuario else []
+    return render_template(
+        "index.html",
+        usuario=usuario,
+        viagens=viagens,
+        google_client_id=GOOGLE_CLIENT_ID,
+    )
 
 
-@app.route("/auth/google/callback", methods=["GET", "POST"])
+@app.route("/auth/google/callback", methods=["POST"])
 def google_callback():
-    """Recebe a credencial JWT do Google e valida 100% no Python."""
-    # TODO (Aluno 3): Receber token JWT do formulário, validar via services.py e salvar session['usuario']
-    pass
+    """Recebe a credencial JWT do Google e valida via services.verificar_token_google."""
+    cookie = request.cookies.get("g_csrf_token", "")
+    corpo = request.form.get("g_csrf_token", "")
+    if not cookie or not hmac.compare_digest(cookie.encode(), corpo.encode()):
+        abort(400, "Falha na verificação CSRF")
+
+    credential = request.form.get("credential")
+    if not credential:
+        abort(400, "Credencial ausente")
+
+    with httpx.Client() as client:
+        info = verificar_token_google(client, credential)
+
+    if not info:
+        flash("Não foi possível validar seu login com o Google. Tente de novo.", "error")
+        return redirect(url_for("index"))
+
+    _iniciar_sessao(
+        {
+            "tipo": "google",
+            "id": f"google:{info['sub']}",
+            "nome": info["name"] or info["email"],
+            "email": info["email"],
+            "foto": info["picture"],
+        }
+    )
+    return redirect(url_for("index"))  # PRG
 
 
-@app.route("/auth/demo", methods=["GET", "POST"])
+@app.route("/auth/demo", methods=["GET"])
 def login_demo():
     """Modo Visitante para desenvolvimento e testes locais."""
-    # TODO (Aluno 3): Criar sessão volátil em memória para 'Viajante Convidado'
-    pass
+    _iniciar_sessao(
+        {
+            "tipo": "visitante",
+            "id": f"visitante_{uuid.uuid4().hex}",
+            "nome": "Viajante Convidado",
+            "email": None,
+            "foto": None,
+        }
+    )
+    return redirect(url_for("index"))  # PRG
 
 
-@app.route("/auth/logout", methods=["GET", "POST"])
+@app.route("/auth/logout", methods=["GET"])
 def logout():
     """Encerra a sessão e descarta a memória de visitante."""
-    # TODO (Aluno 3): Limpar session e descartar viagens temporárias do visitante
-    pass
+    usuario = usuario_atual()
+    if usuario and usuario["tipo"] == "visitante":
+        descartar_viagens_visitante(usuario)
+    session.clear()
+    return redirect(url_for("index"))  # PRG
 
 
-@app.route("/viagens/criar", methods=["GET", "POST"])
+@app.route("/viagens/criar", methods=["POST"])
+@login_obrigatorio
 def criar_viagem():
     """Processa o formulário de criação com deduplicação (locks) e orquestração de APIs."""
-    # TODO (Aluno 3): Implementar lock_requisicoes, orquestração com services/planejamento e Padrão PRG
-    pass
+    usuario = usuario_atual()
+
+    consulta = sanitizar_entrada(request.form.get("destino", ""), max_len=100)
+    if not consulta:
+        flash("Informe um destino válido.", "error")
+        return redirect(url_for("index"))
+
+    # Aceita "Teresina" ou "Teresina, PI"
+    partes = [parte.strip() for parte in consulta.split(",")]
+    cidade_nome = partes[0]
+    uf_informada = partes[1] if len(partes) > 1 else ""
+
+    with lock_requisicoes(f"criar:{usuario['id']}") as livre:
+        if not livre:  # clique duplo: a primeira requisição ainda está rodando
+            flash("Sua solicitação anterior ainda está sendo processada.", "warning")
+            return redirect(url_for("index"))
+
+        # Orquestração: geocodificação (Open-Meteo) devolve a UF real e as coordenadas.
+        with httpx.Client() as client:
+            latitude, longitude, uf = buscar_coordenadas(client, cidade_nome, uf_informada)
+
+            if latitude == 0.0 and longitude == 0.0:
+                flash("Cidade não encontrada no Brasil.", "warning")
+                return redirect(url_for("index"))
+
+            ja_existe = any(
+                v.get("nome", "").lower() == cidade_nome.lower()
+                and v.get("uf", "").upper() == uf.upper()
+                for v in obter_viagens_usuario(usuario["id"])
+            )
+
+            if ja_existe:
+                flash("Essa viagem já está na sua lista.", "info")  # idempotência por conteúdo
+                return redirect(url_for("index"))
+
+            # Orquestração das funções do Aluno 2: clima, percurso e roteiro/guia do destino.
+            # A implementação interna dessas funções é responsabilidade do Aluno 2;
+            # aqui o gateway apenas consome o resultado no fluxo correto.
+            clima = obter_clima(client, latitude, longitude)
+            percurso = obter_percurso(client, latitude, longitude)
+            guia_destino = obter_guia_destino_com_diagnostico(cidade_nome, uf)
+
+        adicionar_viagem_usuario(
+            usuario["id"],
+            {
+                "id": uuid.uuid4().hex,
+                "nome": cidade_nome,
+                "uf": uf,
+                "latitude": latitude,
+                "longitude": longitude,
+                "clima": clima,
+                "percurso": percurso,
+                "guia_destino": guia_destino,
+                "criado_em": datetime.now(timezone.utc).isoformat(),
+            },
+            perfil_usuario=usuario,
+        )
+
+    flash("Viagem criada!", "success")
+    return redirect(url_for("index"))  # PRG
 
 
-@app.route("/viagens/deletar/<string:viagem_id>", methods=["GET", "POST"])
+@app.route("/viagens/deletar/<string:viagem_id>", methods=["POST"])
+@login_obrigatorio
 def deletar_viagem(viagem_id: str):
     """Exclui um roteiro da lista do usuário."""
-    # TODO (Aluno 3): Validar sessão e chamar remover_viagem_usuario
-    pass
+    usuario = usuario_atual()
 
+    with lock_requisicoes(f"deletar:{usuario['id']}:{viagem_id}") as livre:
+        if not livre:
+            flash("Sua solicitação anterior ainda está sendo processada.", "warning")
+            return redirect(url_for("index"))
+
+        existia = any(
+            v.get("id") == viagem_id for v in obter_viagens_usuario(usuario["id"])
+        )
+        remover_viagem_usuario(usuario["id"], viagem_id)
+
+    if existia:
+        flash("Viagem removida.", "success")
+    else:
+        flash("Viagem não encontrada.", "info")  # apagar de novo dá o mesmo estado final
+    return redirect(url_for("index"))  # PRG
 
 # ==============================================================================
 # 👤 RESPONSABILIDADE DO ALUNO 4: Endpoint REST e Error Handlers Globais
@@ -249,5 +432,5 @@ def pagina_nao_encontrada(error):
 
 
 if __name__ == "__main__":
-    print(f"🌍 Servidor Flask Guia do Turista rodando em http://localhost:{PORT}")
+    print(f" Servidor Flask Guia do Turista rodando em http://localhost:{PORT}")
     app.run(host="0.0.0.0", port=PORT, debug=True)
