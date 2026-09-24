@@ -50,9 +50,10 @@ lock_requisicoes = threading.Lock()
 
 def sanitizar_entrada(texto: str, max_len: int = 80) -> str:
     """Higieniza entradas de texto removendo tags HTML, caracteres de controle e espaços extras."""
-    # TODO (Aluno 4): Implementar a sanitização de texto via regex r'<[^>]*>'
-    pass
-
+    texto = re.sub(r"<[^>]*>", "", texto)
+    texto = re.sub(r"[\x00-\x1F\x7F]", "", texto)
+    texto = " ".join(texto.split())
+    return texto[:max_len]
 
 def criar_estrutura_padrao_viagens() -> dict[str, Any]:
     """Retorna a estrutura inicial do payload JSON de viagens com metadados e provedores."""
@@ -74,20 +75,38 @@ def criar_estrutura_padrao_viagens() -> dict[str, Any]:
 
 def carregar_dados_viagens_json() -> dict[str, Any]:
     """Lê a base completa de viagens de static/data/viagens.json de forma thread-safe com lock_arquivo_json."""
-    # TODO (Aluno 4): Implementar leitura segura do JSON com lock_arquivo_json
-    pass
+    with lock_arquivo_json:
+        if not VIAGENS_FILE.exists():
+            return criar_estrutura_padrao_viagens()
+
+        with open(VIAGENS_FILE, "r", encoding="utf-8") as arquivo:
+            return json.load(arquivo)
 
 
 def salvar_dados_viagens_json(dados_completos: dict[str, Any]) -> None:
     """Persiste a base hierárquica em static/data/viagens.json com lock_arquivo_json e indentação de 2 espaços."""
-    # TODO (Aluno 4): Implementar escrita segura no arquivo JSON com lock_arquivo_json
-    pass
+    with lock_arquivo_json:
+        dados_completos["atualizado_em"] = datetime.now().isoformat()
+        dados_completos["total_usuarios"] = len(dados_completos.get("usuarios", {}))
+        dados_completos["total_roteiros"] = sum(
+            len(usuario.get("roteiros", []))
+            for usuario in dados_completos.get("usuarios", {}).values()
+        )
+
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        with open(VIAGENS_FILE, "w", encoding="utf-8") as arquivo:
+            json.dump(dados_completos, arquivo, ensure_ascii=False, indent=2)
 
 
 def obter_viagens_usuario(user_id: str) -> list[dict[str, Any]]:
     """Recupera a lista de roteiros: da memória para visitantes ou do arquivo JSON para logados."""
-    # TODO (Aluno 4): Implementar recuperação de roteiros por usuário (memória vs JSON)
-    pass
+    if user_id.startswith("visitante_"):
+        return viagens_visitante_memoria.get(user_id, [])
+
+    dados = carregar_dados_viagens_json()
+    usuario = dados.get("usuarios", {}).get(user_id, {})
+    return usuario.get("roteiros", [])
 
 
 def adicionar_viagem_usuario(
@@ -96,14 +115,46 @@ def adicionar_viagem_usuario(
     perfil_usuario: dict[str, Any] | None = None,
 ) -> None:
     """Adiciona um novo roteiro: na memória para visitante ou grava no JSON para usuário logado."""
-    # TODO (Aluno 4): Implementar inserção de novo roteiro na estrutura de dados
-    pass
+    if user_id.startswith("visitante_"):
+        viagens_visitante_memoria.setdefault(user_id, []).append(item)
+        return
+
+    dados = carregar_dados_viagens_json()
+    usuarios = dados.setdefault("usuarios", {})
+    usuario = usuarios.setdefault(
+        user_id,
+        {
+            "nome": (perfil_usuario or {}).get("nome", ""),
+            "email": (perfil_usuario or {}).get("email", ""),
+            "roteiros": [],
+        },
+    )
+
+    usuario.setdefault("roteiros", []).append(item)
+    salvar_dados_viagens_json(dados)
 
 
 def remover_viagem_usuario(user_id: str, viagem_id: str) -> None:
     """Remove um roteiro específico pelo ID."""
-    # TODO (Aluno 4): Implementar remoção de roteiro pelo ID
-    pass
+    if user_id.startswith("visitante_"):
+        viagens = viagens_visitante_memoria.get(user_id, [])
+        viagens_visitante_memoria[user_id] = [
+            viagem for viagem in viagens if viagem.get("id") != viagem_id
+        ]
+        return
+
+    dados = carregar_dados_viagens_json()
+    usuario = dados.get("usuarios", {}).get(user_id)
+
+    if not usuario:
+        return
+
+    roteiros = usuario.get("roteiros", [])
+    usuario["roteiros"] = [
+        viagem for viagem in roteiros if viagem.get("id") != viagem_id
+    ]
+
+    salvar_dados_viagens_json(dados)
 
 
 # ==============================================================================
@@ -163,22 +214,38 @@ def deletar_viagem(viagem_id: str):
 @app.route("/api/viagens", methods=["GET"])
 def ver_viagens_json():
     """Retorna a base consolidada de static/data/viagens.json com suporte dinâmico a visitantes."""
-    # TODO (Aluno 4): Retornar jsonify() da árvore consolidada de viagens
-    pass
+    dados = carregar_dados_viagens_json()
+
+    for user_id, viagens in viagens_visitante_memoria.items():
+        usuario = dados.setdefault("usuarios", {}).setdefault(
+            user_id,
+            {
+                "nome": "Viajante Convidado",
+                "email": "",
+                "roteiros": [],
+            },
+        )
+        usuario["roteiros"] = viagens
+
+    dados["total_usuarios"] = len(dados.get("usuarios", {}))
+    dados["total_roteiros"] = sum(
+        len(usuario.get("roteiros", []))
+        for usuario in dados.get("usuarios", {}).values()
+    )
+
+    return jsonify(dados)
 
 
 @app.errorhandler(405)
 def metodo_nao_permitido(error):
     """Fallback para acessos GET em rotas POST (ex: digitar /viagens/criar na barra de endereços)."""
-    # TODO (Aluno 4): Interceptar erro 405 e redirecionar suavemente para url_for('index')
-    pass
+    return redirect(url_for("index"))
 
 
 @app.errorhandler(404)
 def pagina_nao_encontrada(error):
     """Fallback para rotas inexistentes redirecionando suavemente para a página principal."""
-    # TODO (Aluno 4): Interceptar erro 404 e redirecionar suavemente para url_for('index')
-    pass
+    return redirect(url_for("index"))
 
 
 if __name__ == "__main__":
