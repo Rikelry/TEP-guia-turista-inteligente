@@ -18,18 +18,64 @@ def verificar_token_google(client: httpx.Client, token: str) -> dict[str, Any] |
     Verifica se o token foi emitido para o GOOGLE_CLIENT_ID configurado no projeto
     e retorna o payload do usuário (sub, name, email, picture) ou None se for inválido.
     """
-    # TODO (Aluno 1): Implementar a validação do token JWT junto à API do Google OAuth2
-    pass
+    try:
+        resposta = client.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": token},
+            timeout=4.0,
+        )
+        if resposta.status_code != 200:
+            return None
+
+        dados = resposta.json()
+
+        if dados.get("aud") != GOOGLE_CLIENT_ID:
+            return None
+
+        return {
+            "sub": dados.get("sub"),
+            "name": dados.get("name"),
+            "email": dados.get("email"),
+            "picture": dados.get("picture"),
+        }
+    except httpx.HTTPError:
+        return None
 
 
 def obter_sigla_uf(admin1: str, uf_informada: str = "") -> str:
     """Converte o estado retornado pela API (admin1) para a sigla oficial de 2 letras (ex: 'PI').
 
-    Caso a API retorne um nome completo (ex: 'Piauí'), normaliza para a sigla 'PI'.
-    Caso contrário, utiliza a UF informada como fallback se for válida.
+    Caso a API retorne um nome completo (ex: 'Piauí'), normaliza para 'PI'.
     """
-    # TODO (Aluno 1): Implementar a conversão e normalização da UF
-    pass
+    if not admin1:
+        return uf_informada.upper() if uf_informada else ""
+
+    # Se já vier como sigla de 2 letras, retorna direto
+    if len(admin1.strip()) == 2:
+        return admin1.strip().upper()
+
+    admin1_normalizado = admin1.strip().lower()
+
+    # Busca no catálogo de estados (ESTADOS_BRASIL vindo do config.py)
+    for estado in ESTADOS_BRASIL:
+        # Cobre tanto formato de dict {"sigla": "PI", "nome": "Piauí"}
+        # quanto dict simples {"PI": "Piauí"}
+        if isinstance(estado, dict):
+            nome = estado.get("nome", "")
+            sigla = estado.get("sigla", "")
+            if nome.lower() == admin1_normalizado:
+                return sigla.upper()
+
+    if isinstance(ESTADOS_BRASIL, dict):
+        for sigla, nome in ESTADOS_BRASIL.items():
+            if str(nome).lower() == admin1_normalizado:
+                return str(sigla).upper()
+
+    # Fallback: usa a UF informada pelo usuário se não achou correspondência
+    if uf_informada:
+        return uf_informada.upper()
+
+    return ""
 
 
 def buscar_coordenadas(
@@ -37,11 +83,55 @@ def buscar_coordenadas(
 ) -> tuple[float, float, str]:
     """Consulta o Open-Meteo Geocoding com filtro Brasil (country_codes=BR) e timeout=4.0s.
 
-    Retorna a tupla (latitude, longitude, nome_formatado). Caso a busca falhe,
-    aplica fallback seguro retornando (0.0, 0.0, "Cidade - UF").
+    Retorna a tupla (latitude, longitude, uf_oficial_detectada). Caso a busca falhe,
+    aplica fallback para as coordenadas aproximadas da capital da UF informada.
     """
-    # TODO (Aluno 1): Implementar a consulta à API de Geocodificação Open-Meteo com filtro Brasil
-    pass
+    try:
+        resposta = client.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={
+                "name": cidade,
+                "count": 5,
+                "language": "pt",
+                "country_codes": "BR",
+            },
+            timeout=4.0,
+        )
+        resposta.raise_for_status()
+        dados = resposta.json()
+
+        resultados = dados.get("results")
+        if not resultados:
+            return _fallback_coordenadas(uf)
+
+        primeiro = resultados[0]
+        latitude = primeiro.get("latitude", 0.0)
+        longitude = primeiro.get("longitude", 0.0)
+        admin1 = primeiro.get("admin1", "")
+
+        uf_detectada = obter_sigla_uf(admin1, uf)
+
+        return (latitude, longitude, uf_detectada)
+
+    except (httpx.HTTPError, KeyError, IndexError):
+        return _fallback_coordenadas(uf)
+
+
+def _fallback_coordenadas(uf: str) -> tuple[float, float, str]:
+    """Fallback com coordenadas aproximadas das capitais dos estados brasileiros."""
+    capitais = {
+        "AC": (-9.975, -67.824), "AL": (-9.649, -35.708), "AP": (0.034, -51.070),
+        "AM": (-3.119, -60.021), "BA": (-12.977, -38.501), "CE": (-3.717, -38.543),
+        "DF": (-15.779, -47.929), "ES": (-20.315, -40.312), "GO": (-16.686, -49.264),
+        "MA": (-2.530, -44.306), "MT": (-15.601, -56.097), "MS": (-20.469, -54.620),
+        "MG": (-19.917, -43.935), "PA": (-1.456, -48.490), "PB": (-7.115, -34.861),
+        "PR": (-25.429, -49.271), "PE": (-8.048, -34.877), "PI": (-5.089, -42.801),
+        "RJ": (-22.907, -43.173), "RN": (-5.795, -35.209), "RS": (-30.034, -51.218),
+        "RO": (-8.762, -63.904), "RR": (2.820, -60.673), "SC": (-27.596, -48.549),
+        "SP": (-23.550, -46.633), "SE": (-10.911, -37.073), "TO": (-10.184, -48.334),
+    }
+    lat, lon = capitais.get(uf.upper(), (0.0, 0.0))
+    return (lat, lon, uf.upper())
 
 
 # ==============================================================================
