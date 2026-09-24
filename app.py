@@ -136,8 +136,25 @@ def adicionar_viagem_usuario(
 
 def remover_viagem_usuario(user_id: str, viagem_id: str) -> None:
     """Remove um roteiro específico pelo ID."""
-    # TODO (Aluno 4): Implementar remoção de roteiro pelo ID
-    pass
+    if user_id.startswith("visitante_"):
+        viagens = viagens_visitante_memoria.get(user_id, [])
+        viagens_visitante_memoria[user_id] = [
+            viagem for viagem in viagens if viagem.get("id") != viagem_id
+        ]
+        return
+
+    dados = carregar_dados_viagens_json()
+    usuario = dados.get("usuarios", {}).get(user_id)
+
+    if not usuario:
+        return
+
+    roteiros = usuario.get("roteiros", [])
+    usuario["roteiros"] = [
+        viagem for viagem in roteiros if viagem.get("id") != viagem_id
+    ]
+
+    salvar_dados_viagens_json(dados)
 
 
 # ==============================================================================
