@@ -101,8 +101,12 @@ def salvar_dados_viagens_json(dados_completos: dict[str, Any]) -> None:
 
 def obter_viagens_usuario(user_id: str) -> list[dict[str, Any]]:
     """Recupera a lista de roteiros: da memória para visitantes ou do arquivo JSON para logados."""
-    # TODO (Aluno 4): Implementar recuperação de roteiros por usuário (memória vs JSON)
-    pass
+    if user_id.startswith("visitante_"):
+        return viagens_visitante_memoria.get(user_id, [])
+
+    dados = carregar_dados_viagens_json()
+    usuario = dados.get("usuarios", {}).get(user_id, {})
+    return usuario.get("roteiros", [])
 
 
 def adicionar_viagem_usuario(
