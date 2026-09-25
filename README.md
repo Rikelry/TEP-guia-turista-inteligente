@@ -77,12 +77,12 @@ Acesse a aplicação no navegador em:
 
 ```text
 .
-├── app.py                      # [A IMPLEMENTAR] Aplicação Flask (Autenticação Google no Python com Sessão, SSR e Rotas)
+├── app.py                      # Aplicação Flask (Autenticação Google no Python com Sessão, SSR e Rotas)
 ├── config.py                   # Constantes, UFs do Brasil, Client ID do Google e variáveis de ambiente
-├── planejamento.py             # [A IMPLEMENTAR] Módulo de IA Gemini para geração de guia turístico e gastronomia
+├── planejamento.py             # Módulo de IA Gemini para geração de guia turístico e gastronomia
 ├── README.md                   # Documentação e instruções de execução
 ├── requirements.txt            # Lista de dependências Python
-├── services.py                 # [A IMPLEMENTAR] Integrações com APIs externas via HTTPX (Open-Meteo, OSRM e validação de token Google OAuth)
+├── services.py                 # Integrações com APIs externas via HTTPX (Open-Meteo, OSRM e validação de token Google OAuth)
 ├── static
 │   ├── css
 │   │   └── style.css           # Estilização responsiva em CSS
