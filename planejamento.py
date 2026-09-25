@@ -22,9 +22,15 @@ def limpar_formato_texto(texto: str) -> str:
     if not texto:
         return ""
 
-    # Remove marcações de negrito/itálico (*), títulos (#) e blocos de código (`)
+    # Remove marcações de negrito/itálico (*), títulos (#) e blocos de código (`).
+    # Os emojis (📍, 🍽️, 💡) não batem com essa classe de caracteres, então
+    # sobrevivem — é o "marcador visual" que substitui o markdown no prompt.
     texto_sem_marcacao = re.sub(r"[*_`#]+", "", texto)
 
+    # Mesmo pedindo "sem saudação" no prompt, o modelo às vezes começa com
+    # "Olá! Claro, aqui está..." — filtramos qualquer linha que COMECE com
+    # uma dessas palavras (não usamos "contém" pra não apagar frases legítimas
+    # que citem, por exemplo, "segue a costa" no meio do texto).
     padrao_saudacao = re.compile(
         r"^(ol[aá]|oi|claro|com certeza|certamente|aqui est[aá]|segue|"
         r"perfeito|beleza)\b",
@@ -37,6 +43,8 @@ def limpar_formato_texto(texto: str) -> str:
     ]
 
     texto_limpo = "\n".join(linhas_validas)
+    # Normaliza 3+ quebras de linha seguidas (que sobram depois de remover
+    # linhas de saudação) para no máximo uma linha em branco entre blocos.
     texto_limpo = re.sub(r"\n{3,}", "\n\n", texto_limpo)
 
     return texto_limpo.strip()

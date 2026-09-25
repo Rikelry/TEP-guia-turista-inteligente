@@ -59,6 +59,7 @@
       <!-- Formulário Invisível para Envio do Token JWT para o Backend Python -->
       <form id="formGoogleLogin" method="POST" action="{{ url_for('google_callback') }}" style="display: none;">
         <input type="hidden" name="credential" id="inputCredential">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       </form>
     </div>
     {% else %}

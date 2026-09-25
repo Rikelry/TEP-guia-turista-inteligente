@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -208,6 +209,16 @@ def _iniciar_sessao(dados_usuario: dict[str, Any]) -> None:
     session.permanent = True
 
 
+def _obter_csrf_token() -> str:
+    """Gera (uma vez por sessão) e retorna o token usado para proteger o POST de login do Google."""
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+        session.permanent = True
+    return token
+
+
 def descartar_viagens_visitante(usuario: dict[str, Any]) -> None:
     """Remove da memória o roteiro do visitante ao encerrar a sessão."""
     viagens_visitante_memoria.pop(usuario["id"], None)
@@ -239,15 +250,16 @@ def index():
         viagens=viagens,
         client_id=GOOGLE_CLIENT_ID,
         ufs=ESTADOS_BRASIL.keys(),
+        csrf_token=_obter_csrf_token(),
     )
     
 
 @app.route("/auth/google/callback", methods=["POST"])
 def google_callback():
     """Recebe a credencial JWT do Google e valida via services.verificar_token_google."""
-    cookie = request.cookies.get("g_csrf_token", "")
-    corpo = request.form.get("g_csrf_token", "")
-    if not cookie or not hmac.compare_digest(cookie.encode(), corpo.encode()):
+    token_sessao = session.get("csrf_token", "")
+    token_form = request.form.get("csrf_token", "")
+    if not token_sessao or not hmac.compare_digest(token_sessao.encode(), token_form.encode()):
         abort(400, "Falha na verificação CSRF")
 
     credential = request.form.get("credential")

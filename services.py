@@ -158,6 +158,8 @@ def obter_clima(client: httpx.Client, lat: float, lon: float) -> dict[str, str]:
     Caso coordenadas sejam inválidas (0.0, 0.0) ou ocorra timeout (4.0s),
     retorna dicionário de contingência com valores 'N/D'.
     """
+    # (0.0, 0.0) é o valor que buscar_coordenadas devolve quando a cidade não
+    # foi encontrada; nesse caso nem vale a pena chamar a API de clima.
     if lat == 0.0 and lon == 0.0:
         return _fallback_clima()
 
@@ -167,6 +169,8 @@ def obter_clima(client: httpx.Client, lat: float, lon: float) -> dict[str, str]:
             params={
                 "latitude": lat,
                 "longitude": lon,
+                # "current" é o parâmetro novo da Open-Meteo Forecast API;
+                # pedimos só os 3 campos que a aplicação realmente usa.
                 "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
             },
             timeout=4.0,
@@ -182,6 +186,9 @@ def obter_clima(client: httpx.Client, lat: float, lon: float) -> dict[str, str]:
         umidade = atual.get("relative_humidity_2m")
         vento = atual.get("wind_speed_10m")
 
+        # Navegação defensiva: mesmo com HTTP 200, a API pode responder sem
+        # algum desses campos (ex: instabilidade do provedor). Melhor cair
+        # no fallback do que formatar um "None °C" pro usuário.
         if temperatura is None or umidade is None or vento is None:
             return _fallback_clima()
 
@@ -192,6 +199,8 @@ def obter_clima(client: httpx.Client, lat: float, lon: float) -> dict[str, str]:
         }
 
     except (httpx.HTTPError, KeyError):
+        # Cobre timeout, erro de rede/HTTP e JSON com formato inesperado —
+        # nunca deixa a exceção subir e derrubar a requisição do usuário.
         return _fallback_clima()
 
 
@@ -209,6 +218,8 @@ def obter_percurso(
     retorna dicionário com fallback descritivo ('Sem rota direta' / 'Considere voos ou barcos').
     """
     try:
+        # Atenção: a URL do OSRM espera "longitude,latitude" (nessa ordem),
+        # ao contrário da convenção lat/lon usada no resto do projeto.
         resposta = client.get(
             f"https://router.project-osrm.org/route/v1/driving/"
             f"{lon_o},{lat_o};{lon_d},{lat_d}",
@@ -218,6 +229,7 @@ def obter_percurso(
         resposta.raise_for_status()
         dados = resposta.json()
 
+        # "code" != "Ok" é o jeito explícito do OSRM dizer "não existe rota".
         if dados.get("code") != "Ok":
             return _fallback_percurso()
 
@@ -226,13 +238,20 @@ def obter_percurso(
         if not rotas or not waypoints:
             return _fallback_percurso()
 
-        # Sem estrada real ligando os pontos (ex: ilhas), o OSRM "arrasta" a
-        # coordenada para a via mais próxima, ainda que a decenas de km de
-        # distância. Snap acima de 2km indica que não há rota rodoviária real.
+        # Sem estrada real ligando os pontos (ex: ilhas), o OSRM NÃO retorna
+        # code != "Ok": ele "arrasta" (snap) a coordenada pro nó de estrada
+        # mais próximo, mesmo que fique a dezenas/centenas de km de distância,
+        # e devolve uma rota "válida" sem sentido nenhum. Cada waypoint traz
+        # essa distância de snap em metros; testado contra a API real, pontos
+        # no continente ficam na casa de 10-30m, enquanto Fernando de Noronha
+        # (sem ponte/estrada) chegou a ~360.000m. 2km é uma margem segura
+        # entre "GPS impreciso" e "não existe estrada aqui".
         if any(ponto.get("distance", 0.0) > 2000 for ponto in waypoints):
             return _fallback_percurso()
 
         rota = rotas[0]
+        # OSRM devolve distância em metros e duração em segundos; convertemos
+        # pra km (1 casa decimal) e para "Xh Ymin" com divmod.
         distancia_km = round(rota.get("distance", 0.0) / 1000, 1)
         duracao_min = round(rota.get("duration", 0.0) / 60)
         horas, minutos = divmod(int(duracao_min), 60)
@@ -244,6 +263,8 @@ def obter_percurso(
         }
 
     except (httpx.HTTPError, KeyError, IndexError):
+        # Timeout, erro de rede ou resposta em formato inesperado: mesma
+        # lógica do obter_clima, nunca propaga a exceção pro chamador.
         return _fallback_percurso()
 
 
