@@ -302,67 +302,106 @@ def logout():
 @app.route("/viagens/criar", methods=["POST"])
 @login_obrigatorio
 def criar_viagem():
-    """Processa o formulário de criação com deduplicação (locks) e orquestração de APIs."""
     usuario = usuario_atual()
 
-    consulta = sanitizar_entrada(request.form.get("destino", ""), max_len=100)
-    if not consulta:
-        flash("Informe um destino válido.", "error")
+    origem_cidade = sanitizar_entrada(
+        request.form.get("origem_cidade", ""), max_len=100
+    )
+    origem_uf = sanitizar_entrada(
+        request.form.get("origem_uf", ""), max_len=2
+    ).upper()
+
+    destino_cidade = sanitizar_entrada(
+        request.form.get("destino_cidade", ""), max_len=100
+    )
+    destino_uf = sanitizar_entrada(
+        request.form.get("destino_uf", ""), max_len=2
+    ).upper()
+
+    if not origem_cidade or not origem_uf or not destino_cidade or not destino_uf:
+        flash("Informe origem e destino válidos.", "error")
         return redirect(url_for("index"))
 
-    # Aceita "Teresina" ou "Teresina, PI"
-    partes = [parte.strip() for parte in consulta.split(",")]
-    cidade_nome = partes[0]
-    uf_informada = partes[1] if len(partes) > 1 else ""
-
     with lock_requisicoes(f"criar:{usuario['id']}") as livre:
-        if not livre:  # clique duplo: a primeira requisição ainda está rodando
-            flash("Sua solicitação anterior ainda está sendo processada.", "warning")
+        if not livre:
+            flash(
+                "Sua solicitação anterior ainda está sendo processada.",
+                "warning",
+            )
             return redirect(url_for("index"))
 
-        # Orquestração: geocodificação (Open-Meteo) devolve a UF real e as coordenadas.
         with httpx.Client() as client:
-            latitude, longitude, uf = buscar_coordenadas(client, cidade_nome, uf_informada)
+            lat_o, lon_o, uf_o = buscar_coordenadas(
+                client,
+                origem_cidade,
+                origem_uf,
+            )
 
-            if latitude == 0.0 and longitude == 0.0:
-                flash("Cidade não encontrada no Brasil.", "warning")
+            lat_d, lon_d, uf_d = buscar_coordenadas(
+                client,
+                destino_cidade,
+                destino_uf,
+            )
+
+            if lat_o == 0.0 and lon_o == 0.0:
+                flash("Cidade de origem não encontrada no Brasil.", "warning")
                 return redirect(url_for("index"))
 
+            if lat_d == 0.0 and lon_d == 0.0:
+                flash("Cidade de destino não encontrada no Brasil.", "warning")
+                return redirect(url_for("index"))
+
+            origem_formatada = f"{origem_cidade}, {uf_o}"
+            destino_formatado = f"{destino_cidade}, {uf_d}"
+
             ja_existe = any(
-                v.get("nome", "").lower() == cidade_nome.lower()
-                and v.get("uf", "").upper() == uf.upper()
+                v.get("origem", "").lower() == origem_formatada.lower()
+                and v.get("destino", "").lower() == destino_formatado.lower()
                 for v in obter_viagens_usuario(usuario["id"])
             )
 
             if ja_existe:
-                flash("Essa viagem já está na sua lista.", "info")  # idempotência por conteúdo
+                flash("Essa viagem já está na sua lista.", "info")
                 return redirect(url_for("index"))
 
-            # Orquestração das funções do Aluno 2: clima, percurso e roteiro/guia do destino.
-            # A implementação interna dessas funções é responsabilidade do Aluno 2;
-            # aqui o gateway apenas consome o resultado no fluxo correto.
-            clima = obter_clima(client, latitude, longitude)
-            percurso = obter_percurso(client, latitude, longitude)
-            guia_destino = obter_guia_destino_com_diagnostico(cidade_nome, uf)
+            clima = obter_clima(client, lat_d, lon_d)
+
+            percurso = obter_percurso(
+                client,
+                lat_o,
+                lon_o,
+                lat_d,
+                lon_d,
+            )
+
+            guia_texto, guia_diagnostico = obter_guia_destino_com_diagnostico(
+                destino_formatado
+            )
 
         adicionar_viagem_usuario(
             usuario["id"],
             {
                 "id": uuid.uuid4().hex,
-                "nome": cidade_nome,
-                "uf": uf,
-                "latitude": latitude,
-                "longitude": longitude,
+                "origem": origem_formatada,
+                "destino": destino_formatado,
+                "nome": destino_cidade,
+                "uf": uf_d,
+                "latitude_origem": lat_o,
+                "longitude_origem": lon_o,
+                "latitude_destino": lat_d,
+                "longitude_destino": lon_d,
                 "clima": clima,
                 "percurso": percurso,
-                "guia_destino": guia_destino,
+                "dicas_destino": guia_texto,
+                "guia_destino": guia_texto,
+                "diagnostico_guia": guia_diagnostico,
                 "criado_em": datetime.now(timezone.utc).isoformat(),
             },
             perfil_usuario=usuario,
         )
 
     flash("Viagem criada!", "success")
-    return redirect(url_for("index"))  # PRG
+    return redirect(url_for("index"))
 
 
 @app.route("/viagens/deletar/<string:viagem_id>", methods=["POST"])
