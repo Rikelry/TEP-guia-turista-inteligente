@@ -235,13 +235,15 @@ def index():
     """Renderiza a página principal (SSR com Jinja2)."""
     usuario = usuario_atual()
     viagens = obter_viagens_usuario(usuario["id"]) if usuario else []
+
     return render_template(
         "index.html",
         usuario=usuario,
         viagens=viagens,
-        google_client_id=GOOGLE_CLIENT_ID,
+        client_id=GOOGLE_CLIENT_ID,
+        ufs=ESTADOS_BRASIL.keys(),
     )
-
+    
 
 @app.route("/auth/google/callback", methods=["POST"])
 def google_callback():
