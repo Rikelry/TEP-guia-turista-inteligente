@@ -1,4 +1,5 @@
 import httpx
+
 from services import buscar_coordenadas, obter_sigla_uf, verificar_token_google
 
 print("=== Teste 1: obter_sigla_uf ===")

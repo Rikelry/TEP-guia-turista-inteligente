@@ -6,7 +6,6 @@ import json
 import os
 import re
 import threading
-import time
 import uuid
 from datetime import datetime, timezone
 from functools import wraps
@@ -37,7 +36,7 @@ from services import (
     buscar_coordenadas,
     obter_clima,
     obter_percurso,
-  verificar_token_google
+    verificar_token_google,
 )
 
 app = Flask(__name__)
@@ -53,7 +52,6 @@ viagens_visitante_memoria: dict[str, list[dict[str, Any]]] = {}
 # Controle de concorrência e idempotência contra cliques duplicados
 requisicoes_ativas: set[str] = set()
 requisicoes_recentes: dict[str, float] = {}
-lock_requisicoes = threading.Lock()
 
 
 # ==============================================================================
@@ -73,7 +71,7 @@ def criar_estrutura_padrao_viagens() -> dict[str, Any]:
     return {
         "versao_schema": "1.0",
         "descricao": "Base consolidada de roteiros turísticos e telemetria por usuário",
-        "atualizado_em": datetime.now().isoformat(),
+        "atualizado_em": datetime.now(timezone.utc).isoformat(),
         "total_usuarios": 0,
         "total_roteiros": 0,
         "provedores": {
@@ -99,7 +97,7 @@ def carregar_dados_viagens_json() -> dict[str, Any]:
 def salvar_dados_viagens_json(dados_completos: dict[str, Any]) -> None:
     """Persiste a base hierárquica em static/data/viagens.json com lock_arquivo_json e indentação de 2 espaços."""
     with lock_arquivo_json:
-        dados_completos["atualizado_em"] = datetime.now().isoformat()
+        dados_completos["atualizado_em"] = datetime.now(timezone.utc).isoformat()
         dados_completos["total_usuarios"] = len(dados_completos.get("usuarios", {}))
         dados_completos["total_roteiros"] = sum(
             len(usuario.get("roteiros", []))
@@ -176,7 +174,6 @@ def remover_viagem_usuario(user_id: str, viagem_id: str) -> None:
 
 
 # --- Deduplicação de cliques (idempotência por requisição em andamento) -----
-requisicoes_ativas: set[str] = set()
 _lock_estado_requisicoes = threading.Lock()
 
 
@@ -411,6 +408,10 @@ def criar_viagem():
 def deletar_viagem(viagem_id: str):
     """Exclui um roteiro da lista do usuário."""
     usuario = usuario_atual()
+
+    if usuario is None:
+        flash("Você precisa entrar para continuar.", "warning")
+        return redirect(url_for("index"))
 
     with lock_requisicoes(f"deletar:{usuario['id']}:{viagem_id}") as livre:
         if not livre:
