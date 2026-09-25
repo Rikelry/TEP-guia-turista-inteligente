@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Guia do Turista Inteligente</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- CSS Modularizado (Mobile-First / Light Theme) -->
+  <link rel="stylesheet" href="/static/css/style.css">
+
+  <!-- Google Identity Services SDK -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+  <div class="container">
+    <header class="app-header">
+      <h1>🇧🇷 Guia do Turista Brasil</h1>
+      <p>Consultor inteligente de viagens com rotas, clima e guia turístico gerado com Python e IA</p>
+    </header>
+
+    
+    <!-- Bloco da Aplicação (Liberado após Login com Sessão Flask) -->
+    
+    <!-- Barra de Perfil do Usuário -->
+    <div class="card user-bar">
+      <div class="user-info">
+        <img src="None" alt="Avatar de Viajante Convidado">
+        <div>
+          <div class="user-name">Viajante Convidado</div>
+          <div class="user-email">None</div>
+        </div>
+      </div>
+      <a href="/auth/logout" class="btn-logout btn">Sair  ➜]</a>
+    </div>
+
+    <!-- Formulário de Planejamento 100% Python/Flask -->
+    <div class="card">
+      <div class="form-title">🚗 Planejar Novo Roteiro</div>
+      
+      <form id="formCriarViagem" method="POST" action="/viagens/criar">
+        <label class="form-label" for="origem_cidade">Origem:</label>
+        <div class="form-row">
+          <input type="text" id="origem_cidade" name="origem_cidade" placeholder="Cidade de Origem (ex: Recife)" required>
+          <select name="origem_uf" required aria-label="UF de Origem">
+            <option value="">UF</option>
+            
+            <option value="AC">AC</option>
+            
+            <option value="AL">AL</option>
+            
+            <option value="AP">AP</option>
+            
+            <option value="AM">AM</option>
+            
+            <option value="BA">BA</option>
+            
+            <option value="CE">CE</option>
+            
+            <option value="DF">DF</option>
+            
+            <option value="ES">ES</option>
+            
+            <option value="GO">GO</option>
+            
+            <option value="MA">MA</option>
+            
+            <option value="MT">MT</option>
+            
+            <option value="MS">MS</option>
+            
+            <option value="MG">MG</option>
+            
+            <option value="PA">PA</option>
+            
+            <option value="PB">PB</option>
+            
+            <option value="PR">PR</option>
+            
+            <option value="PE">PE</option>
+            
+            <option value="PI">PI</option>
+            
+            <option value="RJ">RJ</option>
+            
+            <option value="RN">RN</option>
+            
+            <option value="RS">RS</option>
+            
+            <option value="RO">RO</option>
+            
+            <option value="RR">RR</option>
+            
+            <option value="SC">SC</option>
+            
+            <option value="SP">SP</option>
+            
+            <option value="SE">SE</option>
+            
+            <option value="TO">TO</option>
+            
+          </select>
+        </div>
+
+        <label class="form-label" for="destino_cidade">Destino:</label>
+        <div class="form-row">
+          <input type="text" id="destino_cidade" name="destino_cidade" placeholder="Cidade de Destino (ex: Salvador)" required>
+          <select name="destino_uf" required aria-label="UF de Destino">
+            <option value="">UF</option>
+            
+            <option value="AC">AC</option>
+            
+            <option value="AL">AL</option>
+            
+            <option value="AP">AP</option>
+            
+            <option value="AM">AM</option>
+            
+            <option value="BA">BA</option>
+            
+            <option value="CE">CE</option>
+            
+            <option value="DF">DF</option>
+            
+            <option value="ES">ES</option>
+            
+            <option value="GO">GO</option>
+            
+            <option value="MA">MA</option>
+            
+            <option value="MT">MT</option>
+            
+            <option value="MS">MS</option>
+            
+            <option value="MG">MG</option>
+            
+            <option value="PA">PA</option>
+            
+            <option value="PB">PB</option>
+            
+            <option value="PR">PR</option>
+            
+            <option value="PE">PE</option>
+            
+            <option value="PI">PI</option>
+            
+            <option value="RJ">RJ</option>
+            
+            <option value="RN">RN</option>
+            
+            <option value="RS">RS</option>
+            
+            <option value="RO">RO</option>
+            
+            <option value="RR">RR</option>
+            
+            <option value="SC">SC</option>
+            
+            <option value="SP">SP</option>
+            
+            <option value="SE">SE</option>
+            
+            <option value="TO">TO</option>
+            
+          </select>
+        </div>
+
+        <button type="submit" id="btnGerarGuia" class="btn btn-primary">Gerar Guia com APIs & IA (Python)</button>
+      </form>
+    </div>
+
+    <!-- Listagem de Roteiros Renderizados via Jinja2 no Servidor -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 8px;">
+        <div class="form-title" style="margin-bottom: 0;">📍 Seus Roteiros Salvos</div>
+        <a href="/api/viagens" target="_blank" rel="noopener noreferrer" class="btn btn-toggle" style="font-size: 0.8rem; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none;" title="Visualizar estrutura e metadados brutos do arquivo JSON de viagens">
+          📄 Ver JSON (API)
+        </a>
+      </div>
+      
+      
+        
+        <div class="viagem-card" id="card-d12da24e20cf4e87816280e40cbae496" onclick="alternarCard('d12da24e20cf4e87816280e40cbae496', event)" title="Clique no cartão para expandir ou recolher o guia">
+          <div class="viagem-header">
+            <div class="viagem-rota-info">
+              <div class="viagem-rota-titulo">
+                Teresina, PI <span class="viagem-rota-seta">➔</span> Parnaiba, PI
+                <span id="indicador-d12da24e20cf4e87816280e40cbae496" class="indicador-accordion">▼</span>
+              </div>
+            </div>
+            <div class="btn-actions" onclick="event.stopPropagation()">
+              <a href="https://www.google.com/maps/dir/?api=1&origin=Teresina, PI&destination=Parnaiba, PI&travelmode=driving" target="_blank" rel="noopener noreferrer" class="btn-maps btn">🗺️ Maps</a>
+              <form method="POST" action="/viagens/deletar/d12da24e20cf4e87816280e40cbae496" class="form-deletar">
+                <button type="submit" class="btn-danger btn">Excluir</button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Badges de Telemetria e Clima -->
+          <div class="telemetria-grid">
+            <span class="tele-badge">🌡️ 30.1 °C</span>
+            <span class="tele-badge">💧 63%</span>
+            <span class="tele-badge">💨 20.5 km/h</span>
+            <span class="tele-badge tele-badge-destaque">🚗 337.4 km</span>
+            <span class="tele-badge tele-badge-tempo">⏱️ 4h 49min de carro</span>
+          </div>
+
+          <!-- Detalhes do Guia com Accordion -->
+          <div id="detalhes-d12da24e20cf4e87816280e40cbae496" class="viagem-detalhes hidden" onclick="event.stopPropagation()">
+            <div class="secao-guia">
+              <div class="secao-guia-header">🏛️ Guia Turístico & Culinária do Destino</div>
+              <div class="guia-texto">🏛️ PONTOS TURÍSTICOS PRINCIPAIS
+📍 Centro histórico e principais praças de Parnaiba, PI
+📍 Museus e centros culturais da região
+📍 Mirantes e paisagens naturais nas proximidades
+
+🍽️ CULINÁRIA TÍPICA
+🍽️ Pratos regionais servidos nos restaurantes tradicionais locais
+🍽️ Doces e quitutes típicos vendidos no comércio da cidade
+
+💡 DICA DE OURO
+💡 Consulte a secretaria de turismo local para roteiros e horários atualizados</div>
+            </div>
+          </div>
+        </div>
+        
+      
+    </div>
+    
+
+  </div>
+
+  <!-- JavaScript Modularizado -->
+  <script src="/static/js/app.js"></script>
+  
+  <script>
+    // Submete o token retornado pelo Google Identity para validação no Python
+    function tratarLoginGoogle(resposta) {
+      if (resposta && resposta.credential) {
+        document.getElementById("inputCredential").value = resposta.credential;
+        document.getElementById("formGoogleLogin").submit();
+      }
+    }
+
+    // Inicialização programática com renderButton para garantir renderização
+    window.addEventListener("load", function() {
+      const clientId = "776335673676-dk7od4ljhh43bio4bppf94i8ou0u9v9i.apps.googleusercontent.com";
+      if (!clientId) return;
+
+      function renderizarBotao() {
+        if (window.google && window.google.accounts && window.google.accounts.id) {
+          google.accounts.id.initialize({
+            client_id: clientId,
+            callback: tratarLoginGoogle,
+            auto_prompt: false
+          });
+
+          const container = document.getElementById("googleBtnContainer");
+          if (container) {
+            google.accounts.id.renderButton(container, {
+              theme: "outline",
+              size: "large",
+              text: "sign_in_with",
+              shape: "pill",
+              width: 280
+            });
+          }
+        }
+      }
+
+      renderizarBotao();
+      setTimeout(renderizarBotao, 800);
+    });
+  </script>
+</body>
+</html>

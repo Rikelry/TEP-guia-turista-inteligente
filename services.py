@@ -78,13 +78,10 @@ def obter_sigla_uf(admin1: str, uf_informada: str = "") -> str:
 
 
 def buscar_coordenadas(
-    client: httpx.Client, cidade: str, uf: str = ""
+    client: httpx.Client,
+    cidade: str,
+    uf: str = "",
 ) -> tuple[float, float, str]:
-    """Consulta o Open-Meteo Geocoding com filtro Brasil (country_codes=BR) e timeout=4.0s.
-
-    Retorna a tupla (latitude, longitude, uf_oficial_detectada). Caso a busca falhe,
-    aplica fallback para as coordenadas aproximadas da capital da UF informada.
-    """
     try:
         resposta = client.get(
             "https://geocoding-api.open-meteo.com/v1/search",
@@ -97,22 +94,39 @@ def buscar_coordenadas(
             timeout=4.0,
         )
         resposta.raise_for_status()
-        dados = resposta.json()
 
+        dados = resposta.json()
         resultados = dados.get("results")
+
         if not resultados:
             return _fallback_coordenadas(uf)
 
-        primeiro = resultados[0]
-        latitude = primeiro.get("latitude", 0.0)
-        longitude = primeiro.get("longitude", 0.0)
-        admin1 = primeiro.get("admin1", "")
+        uf_informada = uf.strip().upper()
 
-        uf_detectada = obter_sigla_uf(admin1, uf)
+        resultado_escolhido = None
+
+        for resultado in resultados:
+            admin1 = resultado.get("admin1", "")
+            uf_detectada = obter_sigla_uf(admin1, "")
+
+            if uf_informada and uf_detectada == uf_informada:
+                resultado_escolhido = resultado
+                break
+
+        if resultado_escolhido is None:
+            if uf_informada:
+                return _fallback_coordenadas(uf)
+
+            resultado_escolhido = resultados[0]
+
+        latitude = resultado_escolhido.get("latitude", 0.0)
+        longitude = resultado_escolhido.get("longitude", 0.0)
+        admin1 = resultado_escolhido.get("admin1", "")
+        uf_detectada = obter_sigla_uf(admin1, uf_informada)
 
         return (latitude, longitude, uf_detectada)
 
-    except (httpx.HTTPError, KeyError, IndexError):
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
         return _fallback_coordenadas(uf)
 
 
