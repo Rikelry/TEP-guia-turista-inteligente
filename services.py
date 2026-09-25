@@ -1,6 +1,5 @@
 # Serviços de integração com APIs externas (Google OAuth, Open-Meteo e OSRM)
 
-import re
 from typing import Any
 
 import httpx
@@ -145,8 +144,46 @@ def obter_clima(client: httpx.Client, lat: float, lon: float) -> dict[str, str]:
     Caso coordenadas sejam inválidas (0.0, 0.0) ou ocorra timeout (4.0s),
     retorna dicionário de contingência com valores 'N/D'.
     """
-    # TODO (Aluno 2): Implementar a consulta à API Open-Meteo Forecast com timeout e fallback
-    pass
+    if lat == 0.0 and lon == 0.0:
+        return _fallback_clima()
+
+    try:
+        resposta = client.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
+            },
+            timeout=4.0,
+        )
+        resposta.raise_for_status()
+        dados = resposta.json()
+
+        atual = dados.get("current")
+        if not atual:
+            return _fallback_clima()
+
+        temperatura = atual.get("temperature_2m")
+        umidade = atual.get("relative_humidity_2m")
+        vento = atual.get("wind_speed_10m")
+
+        if temperatura is None or umidade is None or vento is None:
+            return _fallback_clima()
+
+        return {
+            "temperatura": f"{temperatura} °C",
+            "umidade": f"{umidade}%",
+            "vento": f"{vento} km/h",
+        }
+
+    except (httpx.HTTPError, KeyError):
+        return _fallback_clima()
+
+
+def _fallback_clima() -> dict[str, str]:
+    """Fallback de contingência quando o clima não pode ser consultado."""
+    return {"temperatura": "N/D", "umidade": "N/D", "vento": "N/D"}
 
 
 def obter_percurso(
@@ -157,5 +194,49 @@ def obter_percurso(
     Em caso de trajetos sem estradas (ex: ilhas) ou timeout (6.0s),
     retorna dicionário com fallback descritivo ('Sem rota direta' / 'Considere voos ou barcos').
     """
-    # TODO (Aluno 2): Implementar o cálculo de rota e distância via OSRM com conversão de unidades
-    pass
+    try:
+        resposta = client.get(
+            f"https://router.project-osrm.org/route/v1/driving/"
+            f"{lon_o},{lat_o};{lon_d},{lat_d}",
+            params={"overview": "false"},
+            timeout=6.0,
+        )
+        resposta.raise_for_status()
+        dados = resposta.json()
+
+        if dados.get("code") != "Ok":
+            return _fallback_percurso()
+
+        rotas = dados.get("routes")
+        waypoints = dados.get("waypoints")
+        if not rotas or not waypoints:
+            return _fallback_percurso()
+
+        # Sem estrada real ligando os pontos (ex: ilhas), o OSRM "arrasta" a
+        # coordenada para a via mais próxima, ainda que a decenas de km de
+        # distância. Snap acima de 2km indica que não há rota rodoviária real.
+        if any(ponto.get("distance", 0.0) > 2000 for ponto in waypoints):
+            return _fallback_percurso()
+
+        rota = rotas[0]
+        distancia_km = round(rota.get("distance", 0.0) / 1000, 1)
+        duracao_min = round(rota.get("duration", 0.0) / 60)
+        horas, minutos = divmod(int(duracao_min), 60)
+
+        return {
+            "distancia": f"{distancia_km} km",
+            "tempo": f"{horas}h {minutos}min de carro",
+            "modal": "carro",
+        }
+
+    except (httpx.HTTPError, KeyError, IndexError):
+        return _fallback_percurso()
+
+
+def _fallback_percurso() -> dict[str, str]:
+    """Fallback descritivo para trajetos sem estrada (ex: ilhas) ou falha na consulta ao OSRM."""
+    return {
+        "distancia": "Sem rota direta",
+        "tempo": "Considere voos ou barcos",
+        "modal": "indisponível",
+    }
