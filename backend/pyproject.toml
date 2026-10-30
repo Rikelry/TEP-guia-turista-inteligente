@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+# Comprimento de linha fica a cargo do `ruff format`; docstrings longas são aceitas.
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    # Aviso interno do Starlette sobre o TestClient; não afeta os testes.
+    "ignore:Using `httpx` with `starlette.testclient`",
+]

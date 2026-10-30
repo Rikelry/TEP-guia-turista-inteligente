@@ -1,110 +1,81 @@
-# 🇧🇷 Guia do Turista Inteligente (Flask + HTTPX + Google Auth + Gemini AI)
+# Guia do Turista Inteligente · API v2 (FastAPI)
 
-Aplicação web desenvolvida com o microframework **Flask** e Python moderno para orquestração de APIs externas com autenticação via **Google Identity Services (OAuth JWT)**, gerando roteiros de viagem com dados meteorológicos, cálculo de percurso rodoviário e guia turístico & culinário com inteligência artificial.
+API REST assíncrona (ASGI) que substitui o monólito Flask. Orquestra geocodificação e clima
+(Open-Meteo), rota (OSRM), relevo (Open-Elevation) e o guia por IA (Google Gemini), com
+streaming SSE, circuit breakers, cache, telemetria e persistência por usuário.
 
----
-
-## 🚀 Como Executar o Projeto Localmente
-
-### 1. Clonar o Repositório e Acessar a Pasta
+## Como rodar
 
 ```bash
-git clone https://github.com/Rikelry/TEP-guia-turista-inteligente.git
-cd TEP-guia-turista-inteligente
-```
-
----
-
-## 2. Criar e Ativar o Ambiente Virtual (`.venv`)
-
-* **Linux/macOS (Bash/Zsh)**
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-* **Windows (PowerShell)**
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
----
-
-### 3. Instalar as Dependências
-
-```bash
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+cp .env.example .env          # preencha GOOGLE_CLIENT_ID e GEMINI_API_KEY
+uvicorn app.main:app --reload --port 8001
 ```
 
----
+- API: http://localhost:8001 · Swagger: http://localhost:8001/docs · ReDoc: http://localhost:8001/redoc
+- Probes: `/healthz` e `/readyz` · Prometheus: `/metrics`
+- Testes (sem internet, provedores simulados): `pytest -v`
+- Lint e formatação: `ruff check app tests` e `ruff format app tests`
 
-### 4. Configurar as Chaves e Variáveis de Ambiente
+Sem `GEMINI_API_KEY` o guia usa a contingência (montada com o catálogo e o clima real).
 
-Configure as variáveis no seu terminal:
+## Estrutura
 
-* **Linux/macOS (Bash/Zsh)**
-```bash
-export GEMINI_API_KEY="SUA_CHAVE_GEMINI_AQUI"
-export GOOGLE_CLIENT_ID="776335673676-dk7od4ljhh43bio4bppf94i8ou0u9v9i.apps.googleusercontent.com"
-export PORT="8001"
+```
+app/
+├── main.py                 # lifespan (pool httpx, sessões), CORS, X-Process-Time, X-Request-ID, probes
+├── core/
+│   ├── config.py           # Pydantic-Settings: .env, CORS, URLs e timeouts dos provedores
+│   ├── dependencies.py     # Depends: cliente HTTP, sessões, usuário ativo (X-User-Id)
+│   ├── logging_config.py   # logs com Correlation-ID
+│   ├── cache.py            # cache em memória com TTL
+│   ├── circuit_breaker.py  # disjuntor por provedor com fallback imediato
+│   ├── catalogo.py         # destinos curados, atrativos, gastronomia e Haversine
+│   └── metricas.py         # contadores e latências alimentados pelo middleware
+├── routers/
+│   ├── auth.py             # /api/v1/auth: Google JWT, visitante (2 h), sessão, logout (sendBeacon)
+│   ├── roteiros.py         # /api/v1/roteiros: planejar, mapa-rota, stream-guia, custos, GPX, histórico
+│   └── telemetria.py       # /api/v1/telemetria e /metrics
+├── schemas/
+│   ├── auth.py             # contratos de autenticação
+│   └── roteiros.py         # contratos estritos de roteiro (422 em entrada inválida)
+└── services/
+    ├── clima_service.py    # geocodificação e clima (Open-Meteo)
+    ├── rota_service.py     # OSRM: geometria, distância, alternativas, detecção de ilha
+    ├── altimetria_service.py  # perfil de relevo, desnível e penalização no consumo
+    ├── postos_service.py   # paradas por autonomia (reserva de 18%)
+    ├── custos_service.py   # combustível/energia, pedágio, emissões e rateio
+    ├── gemini_service.py   # guia por IA, streaming e eventos SSE
+    ├── gpx_service.py      # exportação GPX 1.1
+    ├── storage_service.py  # JSON atômico por usuário (visitante só em memória)
+    └── sessao_service.py   # sessões ativas com TTL
+static/data/                # viagens.json e estados_brasil.json
+tests/                      # pytest
 ```
 
-* **Windows (PowerShell)**
-```powershell
-$env:GEMINI_API_KEY="SUA_CHAVE_GEMINI_AQUI"
-$env:GOOGLE_CLIENT_ID="776335673676-dk7od4ljhh43bio4bppf94i8ou0u9v9i.apps.googleusercontent.com"
-$env:PORT="8001"
-```
+## Endpoints principais
 
-> **Obtenção da Chave Gemini:** Acesse o [Google AI Studio](https://aistudio.google.com/), crie sua chave e defina na variável `GEMINI_API_KEY`.
+Todas as rotas de roteiro exigem o header `X-User-Id` de uma sessão ativa (401 sem ele).
 
----
-
-### 5. Iniciar o Servidor Flask
-
-```bash
-python app.py
-```
-
-Acesse a aplicação no navegador em:  
-👉 **`http://localhost:8001`**
-
----
-
-## 📂 Estrutura do Projeto
-
-```text
-.
-├── app.py                      # Aplicação Flask (Autenticação Google no Python com Sessão, SSR e Rotas)
-├── config.py                   # Constantes, UFs do Brasil, Client ID do Google e variáveis de ambiente
-├── planejamento.py             # Módulo de IA Gemini para geração de guia turístico e gastronomia
-├── README.md                   # Documentação e instruções de execução
-├── requirements.txt            # Lista de dependências Python
-├── services.py                 # Integrações com APIs externas via HTTPX (Open-Meteo, OSRM e validação de token Google OAuth)
-├── static
-│   ├── css
-│   │   └── style.css           # Estilização responsiva em CSS
-│   ├── data
-│   │   ├── estados_brasil.json # Mapeamento oficial das 27 UFs do Brasil
-│   │   └── viagens.json        # Persistência em JSON dos roteiros dos usuários logados
-│   └── js
-│       └── app.js              # Comportamento de interface (Accordion e bloqueio de cliques)
-└── templates
-    └── index.html              # Frontend Server-Side Rendering (Jinja2, Google Login URI, Cards e Accordion)
-```
-
----
-
-## 🧪 Qualidade de Código e Linter
-
-Para validar o código com as ferramentas da disciplina:
-
-```bash
-# Formatação e checagem de boas práticas (PEP 8)
-ruff check . --fix
-
-# Checagem estática de tipos (Type Hints)
-mypy app.py services.py planejamento.py config.py
-```
+| Método e rota | O que faz |
+| --- | --- |
+| `POST /api/v1/auth/google` | `{ credential }` → valida o JWT no Google → `{ usuario }` |
+| `POST /api/v1/auth/visitante` | Sessão de visitante com `expira_em` = agora + 2 h |
+| `GET /api/v1/auth/sessao` | Perfil da sessão do `X-User-Id` |
+| `POST /api/v1/auth/logout` | `{ user_id }` em JSON ou `text/plain` (sendBeacon) → 204 |
+| `POST /api/v1/roteiros/planejar` | `asyncio.gather` duplo (geocodificação; clima + rota) + Gemini. 409 em clique duplicado, 499 se o cliente sair |
+| `POST /api/v1/roteiros/mapa-rota` | Rotas alternativas com relevo, paradas por autonomia e custos |
+| `POST /api/v1/roteiros/stream-guia` | Guia por IA em Server-Sent Events (`data: {"chunk", "done"}`) |
+| `POST /api/v1/roteiros/custos` | Calculadora de combustível/energia, pedágio, emissões e rateio |
+| `POST /api/v1/roteiros/exportar/gpx` | `{ roteiro_id }` → arquivo GPX 1.1 |
+| `GET /api/v1/roteiros/minhas-viagens` | Histórico do usuário |
+| `DELETE /api/v1/roteiros/{id}` | Exclui um roteiro |
+| `PATCH /api/v1/roteiros/{id}/visitas` | `{ atrativo_id, visitado }` |
+| `POST /api/v1/roteiros/{id}/compartilhar` | Agenda o envio em segundo plano e devolve o link do WhatsApp |
+| `GET /api/v1/roteiros/destinos` | Catálogo de destinos (para sugestões por Haversine na SPA) |
+| `GET /api/v1/telemetria` | Métricas, provedores ativos e circuit breakers |
+| `POST /api/v1/telemetria/auditoria` | Registra um evento de auditoria em segundo plano (202) |
+| `GET /metrics` | Exportador Prometheus |

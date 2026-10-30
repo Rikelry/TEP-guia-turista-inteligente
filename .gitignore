@@ -6,6 +6,12 @@ __pycache__/
 .mypy_cache
 .ruff_cache
 .venv/
+.pytest_cache/
+
+# Variáveis de ambiente reais (chaves e segredos). Só o .env.example vai para o git.
+.env
+.env.*
+!.env.example
 
 # ===============================================
 # Front-end
