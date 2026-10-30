@@ -1,0 +1,12 @@
+# API v2 (FastAPI / ASGI)
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+httpx>=0.28.0
+google-genai>=1.0.0
+
+# Testes e qualidade
+pytest>=8.3.0
+ruff>=0.9.0
+mypy>=1.14.0
