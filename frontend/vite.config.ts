@@ -4,6 +4,23 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   plugins: [react()],
 
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:8001",
+        changeOrigin: true,
+      },
+      "/auth": {
+        target: "http://localhost:8001",
+        changeOrigin: true,
+      },
+      "/viagens": {
+        target: "http://localhost:8001",
+        changeOrigin: true,
+      },
+    },
+  },
+
   test: {
     environment: "jsdom",
     setupFiles: ["./src/setupTests.ts"],
