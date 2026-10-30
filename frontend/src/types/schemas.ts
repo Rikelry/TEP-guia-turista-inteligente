@@ -126,6 +126,7 @@ export interface Usuario {
   nome: string;
   email?: string | null;
   foto?: string | null;
+  expira_em?: string | null;
 }
 
 export const ESTILOS_VIAGEM: { valor: EstiloViagem; rotulo: string }[] = [

@@ -4,6 +4,7 @@
 // validação visual dos componentes de interface.
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "./hooks/useAuth";
 
 import BotoesControleViagem from "./components/BotoesControleViagem";
 import Footer from "./components/Footer";
@@ -21,7 +22,6 @@ import type {
   RoteiroRequest,
   RoteiroResposta,
   Telemetria,
-  Usuario,
   ViagemResumo,
 } from "./types/schemas";
 
@@ -131,7 +131,7 @@ function montarRoteiroDemo(dados: RoteiroRequest): RoteiroResposta {
 
 export function App() {
   const [tema, setTema] = useState<Tema>("claro");
-  const [usuario, setUsuario] = useState<Usuario | null>(null);
+  const { usuario, loginVisitante, logout } = useAuth();
   const [resultado, setResultado] = useState<RoteiroResposta | null>(null);
   const [roteiroAtivoId, setRoteiroAtivoId] = useState<string | null>(null);
   const [guiaTexto, setGuiaTexto] = useState("");
@@ -243,17 +243,8 @@ export function App() {
         usuario={usuario}
         tema={tema}
         onAlternarTema={() => setTema((atual) => (atual === "claro" ? "escuro" : "claro"))}
-        onEntrarVisitante={() =>
-          setUsuario({
-            tipo: "visitante",
-            id: "visitante-demo",
-            nome: "Visitante",
-          })
-        }
-        onSair={() => {
-          setUsuario(null);
-          notificar("info", "Sessão encerrada.");
-        }}
+        onEntrarVisitante={loginVisitante}
+        onSair={logout}
       />
 
       <main className="container page" id="conteudo">
