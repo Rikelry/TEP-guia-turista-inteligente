@@ -1,8 +1,14 @@
-import { defineConfig } from "vite-plus";
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   plugins: [react()],
+
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./src/setupTests.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
+  },
 
   fmt: {},
 

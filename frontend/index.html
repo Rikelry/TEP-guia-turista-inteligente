@@ -1,13 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="theme-color" content="#0b6e4f" />
+    <meta
+      name="description"
+      content="Guia do Turista Inteligente: planejamento de viagens com clima, rota, altimetria, custos e guia gerado por IA."
+    />
+    <title>Guia do Turista Inteligente</title>
+
+    <!-- Leaflet: estilos do mapa (exigidos pelo MapaRota.tsx) -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+
+    <!-- Google Identity Services: login Google da sessão híbrida -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
