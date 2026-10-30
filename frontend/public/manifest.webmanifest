@@ -1,0 +1,12 @@
+{
+  "name": "Guia do Turista Inteligente",
+  "short_name": "Guia do Turista",
+  "description": "Planejador de viagens rodoviárias pelo Brasil com rota, custos, clima e guia por IA.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6fbf6",
+  "theme_color": "#0b6e4f",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

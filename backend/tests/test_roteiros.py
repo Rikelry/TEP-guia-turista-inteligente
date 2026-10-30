@@ -465,3 +465,12 @@ def test_metrics_no_formato_prometheus(client: TestClient, visitante: dict[str, 
     assert "guia_roteiros_gerados_total 1" in texto
     assert 'guia_circuit_breaker_aberto{provedor="rota"} 0' in texto
     assert 'guia_sessoes_ativas{tipo="visitante"} 1' in texto
+
+
+def test_planejar_aceita_varios_perfis(client: TestClient, visitante: dict[str, str]) -> None:
+    r = planejar(client, visitante, perfis=["cultural", "gastronomico"])
+    assert r.status_code == 200
+    assert r.json()["perfis"] == ["cultural", "gastronomico"]
+    assert planejar(client, visitante, perfis=["luxo"]).status_code == 422
+    # Sem a lista, o perfil é o estilo_viagem (compatível com clientes antigos).
+    assert planejar(client, visitante, destino_cidade="Fortaleza").json()["perfis"] == ["ecoturismo"]

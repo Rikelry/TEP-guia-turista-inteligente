@@ -1,42 +1,76 @@
-// Topbar: alternador Dark/Light, apresentação do usuário e sessão híbrida.
+// Topbar: marca, alternador de tema, Google Sign-In e sessão híbrida (visitante com
+// contagem regressiva e "Voltar para [Nome]" sem novo login no Google).
 
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import type { Tema } from "../hooks/useTheme";
+import GoogleLoginButton from "./GoogleLoginButton";
 import type { Usuario } from "../types/schemas";
 
-export type Tema = "claro" | "escuro";
+export type { Tema };
 
 export interface HeaderProps {
   usuario: Usuario | null;
+  googleSalvo: Usuario | null;
+  carregando?: boolean;
   tema: Tema;
+  /** Tempo restante do visitante já formatado. */
+  restanteVisitante?: string | null;
   onAlternarTema: () => void;
+  onEntrarGoogle: (credential: string) => void;
   onEntrarVisitante: () => void;
+  onVoltarGoogle: () => void;
   onSair: () => void;
-  /** Conta Google mantida em espera enquanto se navega como visitante. */
-  usuarioGoogleSalvo?: { nome: string } | null;
-  onRestaurarGoogle?: () => void;
-  /** Botão de login Google injetado pelo orquestrador (Google Identity Services). */
-  acaoLogin?: ReactNode;
 }
 
 function iniciais(nome: string): string {
-  const partes = nome.trim().split(/\s+/).slice(0, 2);
-  return partes.map((parte) => parte.charAt(0).toUpperCase()).join("");
+  return nome
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p.charAt(0).toUpperCase())
+    .join("");
+}
+
+function primeiroNome(nome: string): string {
+  return nome.split(" ")[0] || nome;
 }
 
 export function Header({
   usuario,
+  googleSalvo,
+  carregando = false,
   tema,
+  restanteVisitante,
   onAlternarTema,
+  onEntrarGoogle,
   onEntrarVisitante,
+  onVoltarGoogle,
   onSair,
-  usuarioGoogleSalvo,
-  onRestaurarGoogle,
-  acaoLogin,
 }: HeaderProps) {
   const [menuAberto, setMenuAberto] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const temaEscuro = tema === "escuro";
+
+  // Fecha o menu com Esc ou clique fora.
+  useEffect(() => {
+    if (!menuAberto) return;
+    const aoTeclar = (e: KeyboardEvent) => e.key === "Escape" && setMenuAberto(false);
+    const aoClicar = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuAberto(false);
+    };
+    document.addEventListener("keydown", aoTeclar);
+    document.addEventListener("mousedown", aoClicar);
+    return () => {
+      document.removeEventListener("keydown", aoTeclar);
+      document.removeEventListener("mousedown", aoClicar);
+    };
+  }, [menuAberto]);
+
+  const executar = (acao: () => void) => () => {
+    setMenuAberto(false);
+    acao();
+  };
 
   return (
     <header className="header">
@@ -48,8 +82,10 @@ export function Header({
             </svg>
           </span>
           <span className="header__brand-text">
-            <span>Guia do Turista</span>
-            <span className="header__brand-sub">Inteligente</span>
+            <span>Guia do Turista Inteligente</span>
+            <span className="header__brand-sub">
+              Consultor de viagens com rotas, clima e guia turístico gerado por IA
+            </span>
           </span>
         </a>
 
@@ -57,7 +93,6 @@ export function Header({
           <button
             type="button"
             className="btn btn--icon"
-            aria-pressed={temaEscuro}
             aria-label={temaEscuro ? "Ativar tema claro" : "Ativar tema escuro"}
             title={temaEscuro ? "Tema claro" : "Tema escuro"}
             onClick={onAlternarTema}
@@ -68,28 +103,73 @@ export function Header({
           </button>
 
           {usuario ? (
-            <div className="menu">
+            <div className="menu" ref={menuRef}>
               <button
                 type="button"
                 className="user-chip"
                 aria-haspopup="menu"
                 aria-expanded={menuAberto}
-                onClick={() => setMenuAberto((aberto) => !aberto)}
+                onClick={() => setMenuAberto((v) => !v)}
               >
-                <span className="user-chip__avatar" aria-hidden="true">
-                  {iniciais(usuario.nome) || "?"}
-                </span>
+                {usuario.foto ? (
+                  <img
+                    className="user-chip__foto"
+                    src={usuario.foto}
+                    alt=""
+                    width={32}
+                    height={32}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="user-chip__avatar" aria-hidden="true">
+                    {iniciais(usuario.nome) || "?"}
+                  </span>
+                )}
                 <span>
                   <span className="user-chip__name">{usuario.nome}</span>
                   <span className="user-chip__badge">
-                    {usuario.tipo === "google" ? "Google conectado" : "Visitante temporário"}
+                    {usuario.tipo === "google"
+                      ? "Google conectado"
+                      : restanteVisitante
+                        ? `Visitante · expira em ${restanteVisitante}`
+                        : "Visitante temporário"}
                   </span>
                 </span>
               </button>
-
               {menuAberto && (
                 <div className="menu__panel" role="menu">
-                  <button type="button" className="menu__item" role="menuitem" onClick={onSair}>
+                  {usuario.tipo === "google" && (
+                    <button
+                      type="button"
+                      className="menu__item"
+                      role="menuitem"
+                      onClick={executar(onEntrarVisitante)}
+                    >
+                      <svg className="icon" aria-hidden="true">
+                        <use href="/icons.svg#ic-usuario" />
+                      </svg>
+                      Usar como visitante
+                    </button>
+                  )}
+                  {usuario.tipo === "visitante" && googleSalvo && (
+                    <button
+                      type="button"
+                      className="menu__item"
+                      role="menuitem"
+                      onClick={executar(onVoltarGoogle)}
+                    >
+                      <svg className="icon" aria-hidden="true">
+                        <use href="/icons.svg#ic-trocar" />
+                      </svg>
+                      Voltar para {primeiroNome(googleSalvo.nome)}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="menu__item"
+                    role="menuitem"
+                    onClick={executar(onSair)}
+                  >
                     <svg className="icon" aria-hidden="true">
                       <use href="/icons.svg#ic-sair" />
                     </svg>
@@ -99,24 +179,33 @@ export function Header({
               )}
             </div>
           ) : (
-            <div className="header__actions">
-              {acaoLogin}
-              {usuarioGoogleSalvo && onRestaurarGoogle ? (
-                <button type="button" className="btn btn--ghost" onClick={onRestaurarGoogle}>
+            <>
+              {googleSalvo ? (
+                <button type="button" className="btn btn--ghost" onClick={onVoltarGoogle}>
                   <svg className="icon" aria-hidden="true">
                     <use href="/icons.svg#ic-trocar" />
                   </svg>
-                  Voltar para {usuarioGoogleSalvo.nome}
+                  Voltar para {primeiroNome(googleSalvo.nome)}
                 </button>
               ) : (
-                <button type="button" className="btn btn--ghost" onClick={onEntrarVisitante}>
-                  <svg className="icon" aria-hidden="true">
-                    <use href="/icons.svg#ic-usuario" />
-                  </svg>
-                  Entrar como visitante
-                </button>
+                <GoogleLoginButton
+                  onCredential={onEntrarGoogle}
+                  tema={tema}
+                  className="header__google"
+                />
               )}
-            </div>
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={onEntrarVisitante}
+                disabled={carregando}
+              >
+                <svg className="icon" aria-hidden="true">
+                  <use href="/icons.svg#ic-usuario" />
+                </svg>
+                {carregando ? "Entrando..." : "Entrar como visitante"}
+              </button>
+            </>
           )}
         </div>
       </div>

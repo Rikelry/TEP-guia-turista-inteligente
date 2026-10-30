@@ -37,6 +37,16 @@ ESTILOS = {
 }
 
 
+def combinar_perfis(estilo_viagem: str, perfis: list[str]) -> str:
+    """Perfis escolhidos (sem repetir, na ordem) unidos por '+'; só o estilo se a lista vier vazia."""
+    return "+".join(dict.fromkeys(perfis or [estilo_viagem]))
+
+
+def descrever_perfis(estilo_viagem: str) -> str:
+    """'cultural+gastronomico' → descrição legível de cada perfil."""
+    return " e ".join(ESTILOS.get(e, e) for e in estilo_viagem.split("+"))
+
+
 def descrever_clima(clima: ClimaInfo | None) -> str:
     if not clima or not clima.disponivel:
         return "clima indisponível no momento"
@@ -59,7 +69,7 @@ def montar_prompt(
     turnos = "Manhã, Tarde e Noite" if dias_estadia == 1 else f"Dia 1 a Dia {dias_estadia}"
     return (
         f"Destino: {destino}. Estadia: {dias_estadia} dia(s). "
-        f"Perfil: {ESTILOS.get(estilo_viagem, estilo_viagem)}. "
+        f"Perfil: {descrever_perfis(estilo_viagem)}. "
         f"Clima agora: {descrever_clima(clima)}. "
         f"Atrativos conhecidos: {', '.join(atrativos) or 'não informados'}. "
         f"Gastronomia conhecida: {', '.join(gastronomia) or 'não informada'}.\n\n"
@@ -112,8 +122,13 @@ def _cliente() -> genai.Client:
 
 
 def _config_geracao() -> types.GenerateContentConfig:
+    # thinking_budget=0: sem isso o modelo gasta quase todo o limite "pensando" e o guia sai
+    # cortado (finish_reason=MAX_TOKENS). O guia é curto e objetivo, não precisa de raciocínio.
     return types.GenerateContentConfig(
-        system_instruction=INSTRUCAO_SISTEMA, temperature=0.6, max_output_tokens=500
+        system_instruction=INSTRUCAO_SISTEMA,
+        temperature=0.6,
+        max_output_tokens=1024,
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
 
 

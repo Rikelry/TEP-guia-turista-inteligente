@@ -1,70 +1,114 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { MAPA, ROTEIRO } from "../test/fixtures";
 import MapaRota from "./MapaRota";
-import type { Percurso } from "../types/schemas";
 
-// O Leaflet depende de um motor de layout real; no jsdom substituímos a API
-// por dublês para validar apenas o comportamento do componente.
 vi.mock("leaflet", () => {
-  const criarCamada = () => {
-    const camada = {
-      addTo: () => camada,
-      bindTooltip: () => camada,
-      getBounds: () => ({ isValid: () => false }),
-    };
-    return camada;
+  const camada = () => {
+    const c = { addTo: () => c, bindTooltip: () => c, getBounds: () => ({ isValid: () => true }) };
+    return c;
   };
   return {
     map: () => ({ fitBounds: () => {}, remove: () => {} }),
-    tileLayer: () => criarCamada(),
-    polyline: () => criarCamada(),
-    circleMarker: () => criarCamada(),
+    tileLayer: camada,
+    polyline: camada,
+    circleMarker: camada,
+    marker: camada,
+    divIcon: () => ({}),
     latLng: (lat: number, lng: number) => ({ lat, lng }),
   };
 });
 
-const PERCURSO: Percurso = {
-  distancia_km: 429,
-  duracao_min: 320,
-  pedagio_reais: 34.5,
-  elevacao_ganho_m: 800,
-  elevacao_perda_m: 760,
-  altitudes_m: [600, 700, 650, 810],
-  geometria: [
-    [-23.55, -46.63],
-    [-23.2, -45.0],
-    [-22.91, -43.17],
-  ],
-  paradas: [
-    {
-      nome: "Posto Graal",
-      latitude: -22.47,
-      longitude: -44.45,
-      km_do_inicio: 168,
-      tipo: "combustivel",
-      autonomia_restante_pct: 28,
-      nivel: "atencao",
-    },
-  ],
-};
+const VEICULO = {
+  propulsao: "combustao",
+  consumo_km_l: 12,
+  tanque_litros: 50,
+  preco_litro: 6.2,
+} as const;
 
 describe("MapaRota", () => {
-  it("exibe o placeholder quando não há percurso", () => {
-    render(<MapaRota />);
-    expect(
-      screen.getByText(/o mapa aparece aqui depois que você gerar um roteiro/i),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  it("mostra métricas, sugestões, paradas, custo total e alterna rotas", async () => {
+    const onSelecionar = vi.fn();
+    render(
+      <MapaRota roteiro={ROTEIRO} mapa={MAPA} rotaAtiva={0} onSelecionarRota={onSelecionar} />,
+    );
+
+    expect(screen.getByRole("img", { name: /Piripiri - PI até Natal - RN/ })).toBeInTheDocument();
+    expect(screen.getByText("992,5 km")).toBeInTheDocument();
+    expect(screen.getByText("+1200 m / -1250 m")).toBeInTheDocument();
+    expect(screen.getByText("1 parada")).toBeInTheDocument();
+    expect(screen.getByText("~593 km")).toBeInTheDocument();
+    expect(screen.getByText(/Sugestões de trajeto rodoviário \(2 opções\)/)).toBeInTheDocument();
+    expect(screen.getByText("✓ Em exibição")).toBeInTheDocument();
+    expect(screen.getByText(/Parada 1 · Posto de combustível/)).toBeInTheDocument();
+    expect(screen.getByText(/chega com 19%/)).toBeInTheDocument();
+    expect(screen.getByText("Custo total previsto (combustão)")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Legenda do mapa" })).toHaveTextContent("Parada");
+
+    await userEvent.click(screen.getByRole("tab", { name: "Sugestão 02" }));
+    expect(onSelecionar).toHaveBeenCalledWith(1);
+    await userEvent.click(screen.getByRole("button", { name: /Sugestão 02.*Mais econômica/ }));
+    expect(onSelecionar).toHaveBeenCalledTimes(2);
   });
 
-  it("renderiza o canvas e as paradas quando há percurso", () => {
-    render(<MapaRota percurso={PERCURSO} origem="São Paulo" destino="Rio de Janeiro" />);
+  it("alternador de propulsão pede o outro veículo", async () => {
+    const onTrocar = vi.fn();
+    render(
+      <MapaRota
+        roteiro={ROTEIRO}
+        mapa={MAPA}
+        rotaAtiva={0}
+        onSelecionarRota={vi.fn()}
+        onTrocarPropulsao={onTrocar}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Combustão/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Elétrico \(EV\)/ }));
+    expect(onTrocar).toHaveBeenCalledWith("eletrico");
+  });
 
-    expect(screen.getByRole("img", { name: /mapa do trajeto/i })).toBeInTheDocument();
-    expect(screen.getByText("São Paulo → Rio de Janeiro")).toBeInTheDocument();
-    expect(screen.getByText("Posto Graal")).toBeInTheDocument();
-    expect(screen.getByText(/168 km do início/i)).toBeInTheDocument();
-    expect(screen.getByText(/autonomia restante: 28%/i)).toBeInTheDocument();
+  it("topografia mostra consumo real, cotas e efeito no consumo", async () => {
+    render(
+      <MapaRota
+        roteiro={ROTEIRO}
+        mapa={MAPA}
+        rotaAtiva={0}
+        onSelecionarRota={vi.fn()}
+        veiculo={VEICULO}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Topografia e relevo da rota/ }));
+    expect(screen.getByText("Terreno plano (+1,2%)")).toBeInTheDocument();
+    expect(screen.getByText("Rendimento real: 11,9 km/l")).toBeInTheDocument();
+    expect(screen.getByText("Cota máx: 780 m")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /entre 5 e 780 metros/ })).toBeInTheDocument();
+  });
+
+  it("rateio recalcula o valor por pessoa", async () => {
+    render(<MapaRota roteiro={ROTEIRO} mapa={MAPA} rotaAtiva={0} onSelecionarRota={vi.fn()} />);
+    const sanfona = screen.getByRole("button", { name: /Divisão de custos/ });
+    expect(sanfona).toHaveTextContent(/2 pessoas · R\$\s*274,39\/pessoa/);
+    await userEvent.click(sanfona);
+    await userEvent.click(screen.getByRole("button", { name: "Mais um passageiro" }));
+    expect(sanfona).toHaveTextContent(/3 pessoas · R\$\s*182,93\/pessoa/);
+  });
+
+  it("sem rota rodoviária mostra o aviso do backend", () => {
+    const ilha = {
+      ...ROTEIRO,
+      rota: {
+        ...ROTEIRO.rota,
+        disponivel: false,
+        resumo: "Sem rota rodoviária direta.",
+        geometria: [],
+      },
+    };
+    render(<MapaRota roteiro={ilha} mapa={null} rotaAtiva={0} onSelecionarRota={vi.fn()} />);
+    expect(screen.getByText("Sem rota rodoviária direta.")).toBeInTheDocument();
   });
 });

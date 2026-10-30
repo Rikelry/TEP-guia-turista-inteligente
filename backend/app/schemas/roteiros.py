@@ -80,6 +80,8 @@ class RoteiroRequest(_Estrito):
     destino_uf: str
     dias_estadia: Annotated[int, Field(ge=1, le=5)] = 3
     estilo_viagem: EstiloViagem = "cultural"
+    # Perfis combinados ("de 1 a todos"). Vazio = só o estilo_viagem.
+    perfis: Annotated[list[EstiloViagem], Field(max_length=5)] = []
     preferencia_rota: PreferenciaRota = "rapida"
     passageiros: Annotated[int, Field(ge=1, le=8)] = 1
     veiculo: Veiculo = Field(default_factory=VeiculoCombustao)
@@ -148,6 +150,7 @@ class GuiaStreamRequest(_Estrito):
     destino: Annotated[str, Field(min_length=2, max_length=120)]
     dias_estadia: Annotated[int, Field(ge=1, le=5)] = 3
     estilo_viagem: EstiloViagem = "cultural"
+    perfis: Annotated[list[EstiloViagem], Field(max_length=5)] = []
     clima_info: ClimaInfo | None = None
     atrativos: Annotated[list[Annotated[str, Field(max_length=120)]], Field(max_length=10)] = []
     gastronomia: Annotated[list[Annotated[str, Field(max_length=120)]], Field(max_length=10)] = []
@@ -265,6 +268,7 @@ class RoteiroResponse(BaseModel):
     destino: LocalInfo
     dias_estadia: int
     estilo_viagem: EstiloViagem
+    perfis: list[EstiloViagem] = []
     clima: ClimaInfo
     rota: RotaInfo
     guia: str

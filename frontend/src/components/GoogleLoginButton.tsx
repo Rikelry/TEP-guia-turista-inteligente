@@ -1,96 +1,62 @@
-import { useEffect, useRef } from "react";
+// Botão oficial do Google Identity Services (usado na tela de login e no cabeçalho).
+// Espera o script do index.html carregar; sem VITE_GOOGLE_CLIENT_ID não renderiza nada.
+
+import { useEffect, useRef, useState } from "react";
+
 import { GOOGLE_CLIENT_ID } from "../config";
+import type { Tema } from "../hooks/useTheme";
 
-interface GoogleCredentialResponse {
-  credential: string;
-}
-
-interface GoogleLoginButtonProps {
+export interface GoogleLoginButtonProps {
   onCredential: (credential: string) => void;
+  tema?: Tema;
+  className?: string;
 }
 
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: {
-            client_id: string;
-            callback: (response: GoogleCredentialResponse) => void;
-          }) => void;
-          renderButton: (
-            element: HTMLElement,
-            options: {
-              theme: "outline";
-              size: "large";
-              text: "signin_with";
-              shape: "rectangular";
-              width: string;
-              locale: string;
-            },
-          ) => void;
-        };
-      };
-    };
-  }
-}
-
-export function GoogleLoginButton({ onCredential }: GoogleLoginButtonProps) {
-  const buttonRef = useRef<HTMLDivElement>(null);
+export function GoogleLoginButton({
+  onCredential,
+  tema = "claro",
+  className,
+}: GoogleLoginButtonProps) {
+  const alvo = useRef<HTMLDivElement>(null);
+  const onCredentialRef = useRef(onCredential);
+  const [pronto, setPronto] = useState(false);
 
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID || !buttonRef.current) return;
-
-    let intervalo: number | undefined;
-
-    const inicializarGoogle = () => {
-      const google = window.google;
-
-      if (!google || !buttonRef.current) return false;
-
-      google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: (response) => {
-          if (response.credential) {
-            onCredential(response.credential);
-          }
-        },
-      });
-
-      buttonRef.current.innerHTML = "";
-
-      google.accounts.id.renderButton(buttonRef.current, {
-        theme: "outline",
-        size: "large",
-        text: "signin_with",
-        shape: "rectangular",
-        width: "280",
-        locale: "pt-BR",
-      });
-
-      return true;
-    };
-
-    if (inicializarGoogle()) return;
-
-    intervalo = window.setInterval(() => {
-      if (inicializarGoogle() && intervalo !== undefined) {
-        window.clearInterval(intervalo);
-      }
-    }, 200);
-
-    return () => {
-      if (intervalo !== undefined) {
-        window.clearInterval(intervalo);
-      }
-    };
+    onCredentialRef.current = onCredential;
   }, [onCredential]);
 
-  if (!GOOGLE_CLIENT_ID) {
-    return null;
-  }
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+    let tentativas = 0;
+    const desenhar = (): boolean => {
+      const gsi = window.google?.accounts.id;
+      if (!gsi || !alvo.current) return false;
+      gsi.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (r) => onCredentialRef.current(r.credential),
+        cancel_on_tap_outside: true,
+      });
+      alvo.current.replaceChildren();
+      gsi.renderButton(alvo.current, {
+        theme: tema === "escuro" ? "filled_black" : "outline",
+        size: "large",
+        text: "signin_with",
+        shape: "pill",
+        locale: "pt-BR",
+      });
+      setPronto(true);
+      return true;
+    };
+    if (desenhar()) return;
+    const id = window.setInterval(() => {
+      tentativas += 1;
+      if (desenhar() || tentativas > 25) window.clearInterval(id);
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [tema]);
 
-  return <div ref={buttonRef} aria-label="Entrar com Google" />;
+  if (!GOOGLE_CLIENT_ID) return null;
+  return <div ref={alvo} className={className} aria-busy={!pronto} />;
 }
 
 export default GoogleLoginButton;

@@ -2,89 +2,64 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { USUARIO_GOOGLE, USUARIO_VISITANTE } from "../test/fixtures";
 import Header from "./Header";
-import type { Usuario } from "../types/schemas";
+import type { HeaderProps } from "./Header";
 
-const USUARIO: Usuario = {
-  tipo: "visitante",
-  id: "v1",
-  nome: "Geovany",
-};
+function montar(extra: Partial<HeaderProps> = {}) {
+  const props: HeaderProps = {
+    usuario: null,
+    googleSalvo: null,
+    tema: "claro",
+    onAlternarTema: vi.fn(),
+    onEntrarGoogle: vi.fn(),
+    onEntrarVisitante: vi.fn(),
+    onVoltarGoogle: vi.fn(),
+    onSair: vi.fn(),
+    ...extra,
+  };
+  render(<Header {...props} />);
+  return props;
+}
 
 describe("Header", () => {
-  it("alterna o tema com estado acessível", async () => {
-    const usuario = userEvent.setup();
-    const alternar = vi.fn();
-    render(
-      <Header
-        usuario={null}
-        tema="claro"
-        onAlternarTema={alternar}
-        onEntrarVisitante={vi.fn()}
-        onSair={vi.fn()}
-      />,
-    );
-
-    const botao = screen.getByRole("button", { name: /ativar tema escuro/i });
-    expect(botao).toHaveAttribute("aria-pressed", "false");
-
-    await usuario.click(botao);
-    expect(alternar).toHaveBeenCalledTimes(1);
+  it("alterna o tema com rótulo acessível", async () => {
+    const props = montar();
+    await userEvent.click(screen.getByRole("button", { name: "Ativar tema escuro" }));
+    expect(props.onAlternarTema).toHaveBeenCalledOnce();
   });
 
-  it("reflete o tema escuro no rótulo", () => {
-    render(
-      <Header
-        usuario={null}
-        tema="escuro"
-        onAlternarTema={vi.fn()}
-        onEntrarVisitante={vi.fn()}
-        onSair={vi.fn()}
-      />,
-    );
-    expect(screen.getByRole("button", { name: /ativar tema claro/i })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+  it("sem sessão oferece entrar como visitante", async () => {
+    const props = montar();
+    await userEvent.click(screen.getByRole("button", { name: /Entrar como visitante/ }));
+    expect(props.onEntrarVisitante).toHaveBeenCalledOnce();
   });
 
-  it("permite entrar como visitante quando não há sessão", async () => {
-    const usuario = userEvent.setup();
-    const entrar = vi.fn();
-    render(
-      <Header
-        usuario={null}
-        tema="claro"
-        onAlternarTema={vi.fn()}
-        onEntrarVisitante={entrar}
-        onSair={vi.fn()}
-      />,
-    );
-
-    await usuario.click(screen.getByRole("button", { name: /entrar como visitante/i }));
-    expect(entrar).toHaveBeenCalledTimes(1);
+  it("usuário Google pode virar visitante pelo menu", async () => {
+    const props = montar({ usuario: USUARIO_GOOGLE });
+    expect(screen.getByText("Google conectado")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Ana Souza/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /Usar como visitante/ }));
+    expect(props.onEntrarVisitante).toHaveBeenCalledOnce();
   });
 
-  it("abre o menu do usuário e encerra a sessão", async () => {
-    const usuario = userEvent.setup();
-    const sair = vi.fn();
-    render(
-      <Header
-        usuario={USUARIO}
-        tema="claro"
-        onAlternarTema={vi.fn()}
-        onEntrarVisitante={vi.fn()}
-        onSair={sair}
-      />,
-    );
+  it("visitante vê a contagem e volta para a conta Google", async () => {
+    const props = montar({
+      usuario: USUARIO_VISITANTE,
+      googleSalvo: USUARIO_GOOGLE,
+      restanteVisitante: "1h 59min",
+    });
+    expect(screen.getByText("Visitante · expira em 1h 59min")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Visitante/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Voltar para Ana" }));
+    expect(props.onVoltarGoogle).toHaveBeenCalledOnce();
+  });
 
-    const chip = screen.getByRole("button", { name: /geovany/i });
-    expect(chip).toHaveAttribute("aria-expanded", "false");
-
-    await usuario.click(chip);
-    expect(chip).toHaveAttribute("aria-expanded", "true");
-
-    await usuario.click(screen.getByRole("menuitem", { name: /encerrar sessão/i }));
-    expect(sair).toHaveBeenCalledTimes(1);
+  it("o menu fecha com Esc", async () => {
+    montar({ usuario: USUARIO_GOOGLE });
+    await userEvent.click(screen.getByRole("button", { name: /Ana Souza/ }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

@@ -1,143 +1,84 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import RoteiroResult from "./RoteiroResult";
-import type { RoteiroResposta } from "../types/schemas";
+import { MAPA, ROTEIRO } from "../test/fixtures";
+import RoteiroResult, { separarSecoes } from "./RoteiroResult";
 
-const RESULTADO: RoteiroResposta = {
-  roteiro_id: "r1",
-  user_id: "u1",
-  origem: "São Paulo/SP",
-  destino: "Rio de Janeiro/RJ",
-  clima: {
-    temperatura: 28.4,
-    sensacao_termica: 30,
-    vento_kmh: 12.3,
-    descricao: "Ensolarado",
-  },
-  percurso: {
-    distancia_km: 429.3,
-    duracao_min: 320,
-    pedagio_reais: 34.5,
-    elevacao_ganho_m: 800,
-    elevacao_perda_m: 760,
-    altitudes_m: [600, 700, 650, 810],
-    geometria: [
-      [-23.55, -46.63],
-      [-22.91, -43.17],
-    ],
-    paradas: [],
-  },
-  rotas_alternativas: [
-    {
-      id: "alt1",
-      rotulo: "Rota secundária",
-      descricao: "Trajeto sem pedágio.",
-      percurso: {
-        distancia_km: 451,
-        duracao_min: 360,
-        pedagio_reais: 0,
-        elevacao_ganho_m: 900,
-        elevacao_perda_m: 880,
-        altitudes_m: [620, 720, 700],
-        geometria: [
-          [-23.55, -46.63],
-          [-22.2, -44.0],
-          [-22.91, -43.17],
-        ],
-        paradas: [],
-      },
-    },
-  ],
-  custos: {
-    combustivel_reais: 200,
-    pedagio_reais: 34.5,
-    total_reais: 234.5,
-    por_passageiro_reais: 117.25,
-    emissao_co2_kg: 61.4,
-  },
-  atrativos: [
-    {
-      id: "a1",
-      nome: "Centro Histórico",
-      descricao: "Casarões coloniais.",
-      categoria: "ponto_turistico",
-      visitado: false,
-    },
-  ],
-  guia_texto: "Guia completo do destino.",
-  diagnostico_guia: {
-    status: "sucesso",
-    modelo: "gemini-3.6-flash",
-    fallback_utilizado: false,
-  },
-  criado_em: "2026-10-30T12:00:00.000Z",
-};
+vi.mock("leaflet", () => {
+  const camada = () => {
+    const c = { addTo: () => c, bindTooltip: () => c, getBounds: () => ({ isValid: () => true }) };
+    return c;
+  };
+  return {
+    map: () => ({ fitBounds: () => {}, remove: () => {} }),
+    tileLayer: camada,
+    polyline: camada,
+    circleMarker: camada,
+    marker: camada,
+    divIcon: () => ({}),
+    latLng: () => ({}),
+  };
+});
+
+function montar(extra = {}) {
+  const props = {
+    roteiro: ROTEIRO,
+    mapa: MAPA,
+    rotaAtiva: 0,
+    onSelecionarRota: vi.fn(),
+    guia: ROTEIRO.guia,
+    onAlternarVisita: vi.fn(),
+    ...extra,
+  };
+  render(<RoteiroResult {...props} />);
+  return props;
+}
 
 describe("RoteiroResult", () => {
-  it("apresenta clima, custos e atrativos", () => {
-    render(<RoteiroResult resultado={RESULTADO} />);
-
-    expect(screen.getByText("28°C")).toBeInTheDocument();
-    expect(screen.getByText("Ensolarado")).toBeInTheDocument();
-    expect(screen.getByText(/234,50/)).toBeInTheDocument();
-    expect(screen.getByText(/429 km/)).toBeInTheDocument();
-    expect(screen.getByText("Centro Histórico")).toBeInTheDocument();
-    expect(screen.getByText("Guia completo do destino.")).toBeInTheDocument();
+  it("divide o guia nos blocos do prompt", () => {
+    const s = separarSecoes(ROTEIRO.guia);
+    expect(s.map((x) => x.titulo)).toEqual([
+      "📍 Identidade",
+      "🗓️ Roteiro",
+      "🍽️ Gastronomia",
+      "🌤️ Clima e dicas",
+    ]);
+    expect(s[1]!.corpo).toContain("Tarde: Dunas de Genipabu.");
   });
 
-  it("troca de rota pela aba e notifica o orquestrador", async () => {
-    const usuario = userEvent.setup();
-    const selecionar = vi.fn();
-    render(<RoteiroResult resultado={RESULTADO} onSelecionarRota={selecionar} />);
-
-    await usuario.click(screen.getByRole("tab", { name: /rota secundária/i }));
-
-    expect(selecionar).toHaveBeenCalledWith("alt1");
-    expect(screen.getByText(/trajeto sem pedágio/i)).toBeInTheDocument();
-  });
-
-  it("mostra o cursor enquanto o guia está em streaming", () => {
-    const { container } = render(
-      <RoteiroResult resultado={RESULTADO} guiaTexto="Em gera" streamingAtivo />,
+  it("visão geral: resumo, clima, guia resumido e catálogo com Maps", async () => {
+    montar();
+    expect(screen.getByRole("heading", { name: /Piripiri - PI → Natal - RN/ })).toBeInTheDocument();
+    expect(screen.getByText("Cultural & Gastronômico · 1 dia")).toBeInTheDocument();
+    expect(screen.getByText("27°C · Céu limpo")).toBeInTheDocument();
+    expect(screen.getByText(/Natal une dunas/)).toBeInTheDocument();
+    expect(screen.queryByText(/Dunas de Genipabu/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Ver roteiro completo/ }));
+    expect(screen.getByText(/Dunas de Genipabu/)).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Ver no Maps/ })[0]).toHaveAttribute(
+      "href",
+      expect.stringContaining("google.com/maps/search"),
     );
-    expect(screen.getByTestId("guia-stream")).toHaveTextContent("Em gera");
-    expect(container.querySelector(".guia__cursor")).toBeInTheDocument();
   });
 
-  it("alerta quando o guia usa conteúdo alternativo", () => {
-    render(
-      <RoteiroResult
-        resultado={{
-          ...RESULTADO,
-          diagnostico_guia: {
-            status: "fallback",
-            modelo: "gemini-3.6-flash",
-            fallback_utilizado: true,
-            motivo: "Limite de cota atingido.",
-          },
-        }}
-      />,
+  it("marca atrativo como visitado", async () => {
+    const props = montar();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Marcar Forte dos Reis Magos como visitado" }),
     );
-    expect(screen.getByText("Limite de cota atingido.")).toBeInTheDocument();
+    expect(props.onAlternarVisita).toHaveBeenCalledWith("atrativo-forte");
+    expect(
+      screen.getByRole("button", { name: "Desmarcar Ginga com tapioca como visitado" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("alterna o atrativo como visitado", async () => {
-    const usuario = userEvent.setup();
-    const alternar = vi.fn();
-    render(<RoteiroResult resultado={RESULTADO} onAlternarAtrativo={alternar} />);
-
-    const cartao = screen.getByRole("article");
-    await usuario.click(within(cartao).getByRole("button", { name: /marcar como visitado/i }));
-    expect(alternar).toHaveBeenCalledWith("a1");
-  });
-
-  it("abre o perfil de altimetria no acordeão", async () => {
-    const usuario = userEvent.setup();
-    render(<RoteiroResult resultado={RESULTADO} />);
-
-    await usuario.click(screen.getByRole("button", { name: /perfil de altimetria/i }));
-    expect(screen.getByRole("img", { name: /perfil de altimetria da rota/i })).toBeInTheDocument();
+  it("mapa na visão geral e aba do guia completo", async () => {
+    montar({ streaming: true, guia: "📍 IDENTIDADE: Chegando" });
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Mapa da rota & paradas");
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Paradas estratégicas");
+    await userEvent.click(screen.getByRole("tab", { name: /Guia & clima/ }));
+    expect(screen.getByText("Gerando em tempo real (SSE)...")).toBeInTheDocument();
+    expect(screen.getByText(/Chegando/)).toBeInTheDocument();
   });
 });

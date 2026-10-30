@@ -49,7 +49,7 @@ from app.services.clima_service import (
     obter_clima_async,
 )
 from app.services.custos_service import calcular_custos
-from app.services.gemini_service import eventos_sse_guia, gerar_guia_ia_async
+from app.services.gemini_service import combinar_perfis, eventos_sse_guia, gerar_guia_ia_async
 from app.services.gpx_service import gerar_gpx, nome_arquivo_gpx
 from app.services.postos_service import calcular_paradas
 from app.services.rota_service import (
@@ -201,7 +201,7 @@ async def planejar_roteiro(
             gerar_guia_ia_async(
                 destino=destino.nome,
                 dias_estadia=payload.dias_estadia,
-                estilo_viagem=payload.estilo_viagem,
+                estilo_viagem=combinar_perfis(payload.estilo_viagem, payload.perfis),
                 clima_info=clima,
                 atrativos=[a.nome for a in atrativos],
                 gastronomia=[g.nome for g in gastronomia],
@@ -219,6 +219,7 @@ async def planejar_roteiro(
         destino=destino,
         dias_estadia=payload.dias_estadia,
         estilo_viagem=payload.estilo_viagem,
+        perfis=payload.perfis or [payload.estilo_viagem],
         clima=clima,
         rota=para_rota_info(rota_calc) if rota_calc else rota_fallback(),
         guia=guia,
@@ -333,7 +334,7 @@ async def stream_guia_ia(payload: GuiaStreamRequest, request: Request) -> Stream
             request,
             destino=payload.destino,
             dias_estadia=payload.dias_estadia,
-            estilo_viagem=payload.estilo_viagem,
+            estilo_viagem=combinar_perfis(payload.estilo_viagem, payload.perfis),
             clima_info=payload.clima_info,
             atrativos=payload.atrativos,
             gastronomia=payload.gastronomia,

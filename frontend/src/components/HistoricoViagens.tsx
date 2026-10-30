@@ -1,97 +1,83 @@
-// Listagem visual do histórico de viagens planejadas.
+// Viagens salvas do usuário (GET /minhas-viagens), com abertura e exclusão pontual (DELETE).
 
-import type { ViagemResumo } from "../types/schemas";
+import { duracao } from "./MapaRota";
+import type { Roteiro } from "../types/schemas";
 
 export interface HistoricoViagensProps {
-  viagens: ViagemResumo[];
-  roteiroAtivoId?: string | null;
-  onSelecionar: (roteiroId: string) => void;
-  onLimpar?: () => void;
-  carregando?: boolean;
-}
-
-function formatarData(iso: string): string {
-  const data = new Date(iso);
-  if (Number.isNaN(data.getTime())) return iso;
-  return data.toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  viagens: Roteiro[];
+  roteiroAtivoId: string | null;
+  logado: boolean;
+  onSelecionar: (id: string) => void;
+  onExcluir: (id: string) => void;
 }
 
 export function HistoricoViagens({
   viagens,
   roteiroAtivoId,
+  logado,
   onSelecionar,
-  onLimpar,
-  carregando = false,
+  onExcluir,
 }: HistoricoViagensProps) {
   return (
-    <section className="card" aria-labelledby="historico-titulo">
+    <aside className="card" aria-labelledby="historico-titulo">
       <div className="card__header">
         <svg className="icon icon--lg" aria-hidden="true">
           <use href="/icons.svg#ic-relogio" />
         </svg>
         <div>
           <h2 className="card__title" id="historico-titulo">
-            Histórico
+            Viagens salvas
           </h2>
           <p className="card__subtitle">
-            {viagens.length === 1 ? "1 viagem planejada" : `${viagens.length} viagens planejadas`}
+            {viagens.length} {viagens.length === 1 ? "viagem salva" : "viagens salvas"}
           </p>
         </div>
-        {onLimpar && viagens.length > 0 && (
-          <button type="button" className="btn btn--icon" onClick={onLimpar}>
-            <svg className="icon" aria-hidden="true">
-              <use href="/icons.svg#ic-lixeira" />
-            </svg>
-            <span className="sr-only">Limpar histórico</span>
-          </button>
-        )}
       </div>
 
-      {carregando ? (
-        <p className="vazio" role="status">
-          Carregando histórico...
-        </p>
+      {!logado ? (
+        <p className="vazio">Entre para ver e salvar suas viagens.</p>
       ) : viagens.length === 0 ? (
-        <p className="vazio">Nenhuma viagem no histórico ainda.</p>
+        <p className="vazio">Nenhuma viagem salva ainda.</p>
       ) : (
         <ul className="lista">
-          {viagens.map((viagem) => {
-            const ativo = viagem.roteiro_id === roteiroAtivoId;
-            return (
-              <li key={viagem.roteiro_id}>
-                <button
-                  type="button"
-                  className="historico__item"
-                  aria-current={ativo ? "true" : undefined}
-                  onClick={() => onSelecionar(viagem.roteiro_id)}
-                >
-                  <svg className="icon" aria-hidden="true">
-                    <use href="/icons.svg#ic-mapa" />
-                  </svg>
-                  <span className="historico__meta">
-                    <span className="historico__rota">
-                      {viagem.origem} → {viagem.destino}
-                    </span>
-                    <span className="historico__data">
-                      {formatarData(viagem.criado_em)} · {Math.round(viagem.distancia_km)} km
-                    </span>
+          {viagens.map((v) => (
+            <li key={v.id} className="historico__item" aria-current={v.id === roteiroAtivoId}>
+              <button type="button" className="historico__abrir" onClick={() => onSelecionar(v.id)}>
+                <span className="historico__meta">
+                  <span className="historico__rota">
+                    <span aria-hidden="true">🚗</span> {v.origem.nome} → {v.destino.nome}
                   </span>
-                  <svg className="icon" aria-hidden="true">
-                    <use href="/icons.svg#ic-chevron" />
-                  </svg>
-                </button>
-              </li>
-            );
-          })}
+                  <span className="historico__data">
+                    {v.clima.disponivel && v.clima.temperatura_c !== null
+                      ? `${v.clima.temperatura_c.toFixed(1)}°C · `
+                      : ""}
+                    {v.rota.distancia_km !== null
+                      ? `${v.rota.distancia_km.toFixed(1)} km`
+                      : "sem rota"}
+                    {" · "}
+                    {new Date(v.criado_em).toLocaleDateString("pt-BR")}
+                  </span>
+                </span>
+                {v.rota.duracao_min !== null && (
+                  <span className="historico__duracao">{duracao(v.rota.duracao_min)}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn--danger btn--pequeno"
+                aria-label={`Excluir viagem ${v.origem.nome} → ${v.destino.nome}`}
+                onClick={() => onExcluir(v.id)}
+              >
+                <svg className="icon" aria-hidden="true">
+                  <use href="/icons.svg#ic-lixeira" />
+                </svg>
+                Excluir
+              </button>
+            </li>
+          ))}
         </ul>
       )}
-    </section>
+    </aside>
   );
 }
 

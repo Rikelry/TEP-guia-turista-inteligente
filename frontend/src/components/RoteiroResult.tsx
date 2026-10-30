@@ -1,339 +1,334 @@
-// Apresentação dos resultados: clima, custos, rotas alternativas, guia e atrativos.
+// Resultado da viagem em abas: Visão geral (mapa da rota & paradas, clima, guia resumido e
+// catálogo) e Guia & clima (streaming SSE completo).
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 
-import type { Atrativo, Percurso, RoteiroResposta } from "../types/schemas";
+import { linkBuscaMaps } from "../services/roteiros";
+import { ESTILOS_VIAGEM } from "../types/schemas";
+import type {
+  AtrativoItem,
+  ClimaInfo,
+  MapaRotaResponse,
+  Propulsao,
+  Roteiro,
+  Veiculo,
+} from "../types/schemas";
+import MapaRota, { duracao } from "./MapaRota";
+
+type Aba = "visao" | "guia";
 
 export interface RoteiroResultProps {
-  resultado: RoteiroResposta;
-  /** Texto do guia em streaming; sobrepõe guia_texto enquanto chega. */
-  guiaTexto?: string;
-  streamingAtivo?: boolean;
-  /** Id da rota ativa ("principal" ou o id de uma alternativa). */
-  rotaAtivaId?: string | null;
-  onSelecionarRota?: (rotaId: string) => void;
-  onAlternarAtrativo?: (atrativoId: string) => void;
+  roteiro: Roteiro;
+  mapa: MapaRotaResponse | null;
+  rotaAtiva: number;
+  onSelecionarRota: (indice: number) => void;
+  carregandoMapa?: boolean;
+  veiculoMapa?: Veiculo | null;
+  onTrocarPropulsao?: (propulsao: Propulsao) => void;
+  guia: string;
+  streaming?: boolean;
+  onAlternarVisita: (atrativoId: string) => void;
+  /** Botões de ação (Maps, WhatsApp, GPX, Imprimir, Excluir). */
+  acoes?: ReactNode;
 }
 
-const ID_PRINCIPAL = "principal";
+const ABAS: { id: Aba; rotulo: string; icone: string }[] = [
+  { id: "visao", rotulo: "Visão geral", icone: "ic-estrela" },
+  { id: "guia", rotulo: "Guia & clima", icone: "ic-nuvem" },
+];
 
-function moeda(valor: number): string {
-  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+/** Divide o guia nos blocos do prompt (📍 IDENTIDADE, 🗓️ ROTEIRO, 🍽️ GASTRONOMIA, 🌤️ CLIMA). */
+export function separarSecoes(texto: string): { titulo: string; corpo: string }[] {
+  const secoes: { titulo: string; corpo: string }[] = [];
+  for (const linha of texto.split("\n")) {
+    const m = /^\s*(\S+)\s+([A-ZÀ-Ú ]{4,}):\s*(.*)$/u.exec(linha);
+    if (m)
+      secoes.push({
+        titulo: `${m[1]} ${m[2]!.charAt(0)}${m[2]!.slice(1).toLowerCase()}`,
+        corpo: m[3] ?? "",
+      });
+    else if (linha.trim() && secoes.length) secoes[secoes.length - 1]!.corpo += `\n${linha.trim()}`;
+    else if (linha.trim()) secoes.push({ titulo: "", corpo: linha.trim() });
+  }
+  return secoes.map((s) => ({ ...s, corpo: s.corpo.trim() }));
 }
 
-function duracao(minutos: number): string {
-  const horas = Math.floor(minutos / 60);
-  const min = Math.round(minutos % 60);
-  if (horas === 0) return `${min} min`;
-  return min === 0 ? `${horas} h` : `${horas} h ${min} min`;
-}
-
-export function Altimetria({ altitudes }: { altitudes: number[] }) {
-  if (altitudes.length === 0) return null;
-  const maximo = Math.max(...altitudes, 1);
-  const minimo = Math.min(...altitudes);
+function CardClima({ clima, destino }: { clima: ClimaInfo; destino: string }) {
   return (
-    <div>
-      <p className="field__hint">
-        Altitude entre {Math.round(minimo)} m e {Math.round(maximo)} m.
-      </p>
-      <div className="altimetria__bar" role="img" aria-label="Perfil de altimetria da rota">
-        {altitudes.map((altitude, indice) => (
-          <span
-            key={indice}
-            className="altimetria__col"
-            style={{ height: `${Math.max(4, (altitude / maximo) * 100)}%` }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PainelPercurso({ percurso }: { percurso: Percurso }) {
-  const [altimetriaAberta, setAltimetriaAberta] = useState(false);
-
-  return (
-    <div className="lista">
-      <div className="badge-grid">
-        <div className="badge">
-          <span className="metrica__label">Distância</span>
-          <span className="metrica__value">{Math.round(percurso.distancia_km)} km</span>
-        </div>
-        <div className="badge">
-          <span className="metrica__label">Duração</span>
-          <span className="metrica__value">{duracao(percurso.duracao_min)}</span>
-        </div>
-        <div className="badge">
-          <span className="metrica__label">Pedágio</span>
-          <span className="metrica__value">{moeda(percurso.pedagio_reais)}</span>
-        </div>
-        <div className="badge">
-          <span className="metrica__label">Ganho de elevação</span>
-          <span className="metrica__value">{Math.round(percurso.elevacao_ganho_m)} m</span>
-        </div>
-      </div>
-
-      <div className="accordion">
-        <button
-          type="button"
-          className="accordion__header"
-          aria-expanded={altimetriaAberta}
-          onClick={() => setAltimetriaAberta((aberta) => !aberta)}
-        >
-          <svg className="icon" aria-hidden="true">
-            <use href="/icons.svg#ic-chevron" />
-          </svg>
-          Perfil de altimetria
-        </button>
-        {altimetriaAberta && (
-          <div className="accordion__panel">
-            <Altimetria altitudes={percurso.altitudes_m} />
-          </div>
+    <section className="clima" aria-label={`Clima em ${destino}`}>
+      <svg className="icon icon--lg" aria-hidden="true">
+        <use href="/icons.svg#ic-termometro" />
+      </svg>
+      <div className="clima__info">
+        <p className="eyebrow">Clima no destino ({destino})</p>
+        {clima.disponivel && clima.temperatura_c !== null ? (
+          <p className="clima__temp">
+            {Math.round(clima.temperatura_c)}°C · {clima.condicao}
+          </p>
+        ) : (
+          <p className="clima__temp clima__temp--off">Clima indisponível agora</p>
         )}
       </div>
-    </div>
+      {clima.disponivel && (
+        <ul className="clima__lista">
+          {clima.sensacao_c !== null && <li>Sensação: {Math.round(clima.sensacao_c)}°C</li>}
+          {clima.vento_kmh !== null && <li>Vento: {Math.round(clima.vento_kmh)} km/h</li>}
+          {clima.umidade_pct !== null && <li>Umidade: {Math.round(clima.umidade_pct)}%</li>}
+        </ul>
+      )}
+    </section>
   );
 }
 
-function CartaoAtrativo({
-  atrativo,
-  onAlternar,
+function Guia({
+  texto,
+  streaming,
+  fallback,
+  resumido,
 }: {
-  atrativo: Atrativo;
-  onAlternar?: ((id: string) => void) | undefined;
+  texto: string;
+  streaming: boolean;
+  fallback: boolean;
+  resumido: boolean;
 }) {
+  const [aberto, setAberto] = useState(false);
+  const secoes = separarSecoes(texto);
+  const visiveis = resumido && !aberto ? secoes.slice(0, 1) : secoes;
+
   return (
-    <article className={`atrativo ${atrativo.visitado ? "atrativo--visitado" : ""}`}>
-      <svg className="icon" aria-hidden="true">
-        <use
-          href={
-            atrativo.categoria === "gastronomia" ? "/icons.svg#ic-moeda" : "/icons.svg#ic-estrela"
-          }
-        />
-      </svg>
-      <div className="atrativo__content">
-        <p className="atrativo__nome">{atrativo.nome}</p>
-        <p className="atrativo__desc">{atrativo.descricao}</p>
+    <section className="card card--plano" aria-labelledby="guia-titulo" aria-busy={streaming}>
+      <div className="card__header">
+        <svg className="icon icon--lg" aria-hidden="true">
+          <use href="/icons.svg#ic-estrela" />
+        </svg>
+        <div>
+          <h3 className="card__title" id="guia-titulo">
+            Guia do viajante
+          </h3>
+          <p className="card__subtitle">
+            {streaming
+              ? "Gerando em tempo real (SSE)..."
+              : fallback
+                ? "Guia de contingência (IA indisponível)"
+                : "Gerado pelo Google Gemini"}
+          </p>
+        </div>
       </div>
-      {onAlternar && (
+      {secoes.length === 0 ? (
+        <p className="guia__stream" aria-live="polite">
+          {streaming ? (
+            <span className="guia__cursor" aria-hidden="true" />
+          ) : (
+            "O guia aparece aqui."
+          )}
+        </p>
+      ) : (
+        <div className="guia__secoes" aria-live="polite">
+          {visiveis.map((s, i) => (
+            <div className="guia__secao" key={i}>
+              {s.titulo && <h4 className="guia__titulo">{s.titulo}</h4>}
+              <p className="guia__texto">
+                {s.corpo}
+                {streaming && i === visiveis.length - 1 && (
+                  <span className="guia__cursor" aria-hidden="true" />
+                )}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+      {resumido && secoes.length > 1 && (
         <button
           type="button"
-          className="btn btn--icon"
-          aria-pressed={atrativo.visitado}
-          onClick={() => onAlternar(atrativo.id)}
+          className="btn btn--link guia__mais"
+          aria-expanded={aberto}
+          onClick={() => setAberto((v) => !v)}
         >
-          <svg className="icon" aria-hidden="true">
-            <use href="/icons.svg#ic-check" />
-          </svg>
-          <span className="sr-only">
-            {atrativo.visitado ? "Desmarcar como visitado" : "Marcar como visitado"}
-          </span>
+          {aberto ? "Mostrar menos" : `Ver roteiro completo (${secoes.length - 1} seções)`}
         </button>
       )}
-    </article>
+    </section>
+  );
+}
+
+function Catalogo({
+  titulo,
+  icone,
+  itens,
+  cidade,
+  onAlternar,
+}: {
+  titulo: string;
+  icone: string;
+  itens: AtrativoItem[];
+  cidade: string;
+  onAlternar: (id: string) => void;
+}) {
+  if (itens.length === 0) return null;
+  const visitados = itens.filter((a) => a.visitado).length;
+  return (
+    <section className="card" aria-label={titulo}>
+      <div className="card__header card__header--entre">
+        <div className="card__header">
+          <svg className="icon icon--lg" aria-hidden="true">
+            <use href={`/icons.svg#${icone}`} />
+          </svg>
+          <div>
+            <h3 className="card__title">{titulo}</h3>
+            <p className="card__subtitle">
+              {visitados} de {itens.length} marcados como visitados
+            </p>
+          </div>
+        </div>
+        <span className="pill">{itens.length} locais</span>
+      </div>
+      <ul className="atrativos">
+        {itens.map((a) => (
+          <li key={a.id} className={`atrativo${a.visitado ? " atrativo--visitado" : ""}`}>
+            <div className="atrativo__content">
+              <p className="eyebrow">{a.tipo === "atrativo" ? "Atrativo" : "Gastronomia"}</p>
+              <p className="atrativo__nome">{a.nome}</p>
+              <p className="atrativo__desc">{a.descricao}</p>
+              <a
+                className="atrativo__link"
+                href={linkBuscaMaps(a.nome, cidade)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver no Maps ↗
+              </a>
+            </div>
+            <button
+              type="button"
+              className="btn btn--icon"
+              aria-pressed={a.visitado}
+              aria-label={
+                a.visitado ? `Desmarcar ${a.nome} como visitado` : `Marcar ${a.nome} como visitado`
+              }
+              onClick={() => onAlternar(a.id)}
+            >
+              <svg className="icon" aria-hidden="true">
+                <use href="/icons.svg#ic-check" />
+              </svg>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
 export function RoteiroResult({
-  resultado,
-  guiaTexto,
-  streamingAtivo = false,
-  rotaAtivaId,
+  roteiro,
+  mapa,
+  rotaAtiva,
   onSelecionarRota,
-  onAlternarAtrativo,
+  carregandoMapa = false,
+  veiculoMapa = null,
+  onTrocarPropulsao,
+  guia,
+  streaming = false,
+  onAlternarVisita,
+  acoes,
 }: RoteiroResultProps) {
-  const [abaLocal, setAbaLocal] = useState<string>(ID_PRINCIPAL);
-  const abaAtiva = rotaAtivaId ?? abaLocal;
-
-  const rotas: { id: string; rotulo: string; descricao?: string; percurso: Percurso }[] = [
-    {
-      id: ID_PRINCIPAL,
-      rotulo: "Rota principal",
-      percurso: resultado.percurso,
-    },
-    ...resultado.rotas_alternativas.map((alternativa) => ({
-      id: alternativa.id,
-      rotulo: alternativa.rotulo,
-      descricao: alternativa.descricao,
-      percurso: alternativa.percurso,
-    })),
-  ];
-
-  const rotaSelecionada = rotas.find((rota) => rota.id === abaAtiva) ?? rotas[0];
-  if (!rotaSelecionada) return null;
-
-  const textoGuia = guiaTexto ?? resultado.guia_texto;
-
-  const selecionar = (id: string): void => {
-    setAbaLocal(id);
-    onSelecionarRota?.(id);
-  };
+  const [aba, setAba] = useState<Aba>("visao");
+  const perfis = (roteiro.perfis ?? [roteiro.estilo_viagem])
+    .map((p) => ESTILOS_VIAGEM.find((e) => e.valor === p)?.rotulo ?? p)
+    .join(" & ");
+  const atrativos = roteiro.atrativos.filter((a) => a.tipo === "atrativo");
+  const gastronomia = roteiro.atrativos.filter((a) => a.tipo === "gastronomia");
+  const textoGuia = guia || (streaming ? "" : roteiro.guia);
 
   return (
-    <div className="lista" aria-label="Resultado do roteiro">
-      <section className="card" aria-labelledby="clima-titulo">
-        <div className="card__header">
-          <svg className="icon icon--lg" aria-hidden="true">
-            <use href="/icons.svg#ic-nuvem" />
-          </svg>
-          <div>
-            <h2 className="card__title" id="clima-titulo">
-              Clima em {resultado.destino}
-            </h2>
-            <p className="card__subtitle">{resultado.clima.descricao}</p>
-          </div>
-        </div>
-        <div className="clima">
-          <span className="clima__temp">{Math.round(resultado.clima.temperatura)}°C</span>
-          <ul className="clima__lista">
-            <li>
-              <svg className="icon" aria-hidden="true">
-                <use href="/icons.svg#ic-termometro" />
-              </svg>{" "}
-              Sensação: {Math.round(resultado.clima.sensacao_termica)}°C
-            </li>
-            <li>
-              <svg className="icon" aria-hidden="true">
-                <use href="/icons.svg#ic-vento" />
-              </svg>{" "}
-              Vento: {Math.round(resultado.clima.vento_kmh)} km/h
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <section className="card" aria-labelledby="custos-titulo">
-        <div className="card__header">
-          <svg className="icon icon--lg" aria-hidden="true">
-            <use href="/icons.svg#ic-moeda" />
-          </svg>
-          <div>
-            <h2 className="card__title" id="custos-titulo">
-              Custos estimados
-            </h2>
-            <p className="card__subtitle">
-              Emissão de {resultado.custos.emissao_co2_kg.toFixed(1)} kg de CO₂
-            </p>
-          </div>
-        </div>
-        <div className="badge-grid">
-          <div className="badge">
-            <span className="metrica__label">Combustível / energia</span>
-            <span className="metrica__value">{moeda(resultado.custos.combustivel_reais)}</span>
-          </div>
-          <div className="badge">
-            <span className="metrica__label">Pedágios</span>
-            <span className="metrica__value">{moeda(resultado.custos.pedagio_reais)}</span>
-          </div>
-          <div className="badge">
-            <span className="metrica__label">Total</span>
-            <span className="metrica__value">{moeda(resultado.custos.total_reais)}</span>
-          </div>
-          <div className="badge">
-            <span className="metrica__label">Por passageiro</span>
-            <span className="metrica__value">{moeda(resultado.custos.por_passageiro_reais)}</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="card" aria-labelledby="rotas-titulo">
-        <div className="card__header">
-          <svg className="icon icon--lg" aria-hidden="true">
-            <use href="/icons.svg#ic-rota" />
-          </svg>
-          <div>
-            <h2 className="card__title" id="rotas-titulo">
-              Rotas
-            </h2>
-            <p className="card__subtitle">{rotaSelecionada.descricao ?? rotaSelecionada.rotulo}</p>
-          </div>
-        </div>
-
-        {rotas.length > 1 && (
-          <div className="tabs" role="tablist" aria-label="Rotas disponíveis">
-            {rotas.map((rota) => (
-              <button
-                key={rota.id}
-                type="button"
-                role="tab"
-                id={`tab-${rota.id}`}
-                aria-selected={rota.id === rotaSelecionada.id}
-                aria-controls={`painel-${rota.id}`}
-                className="tabs__tab"
-                onClick={() => selecionar(rota.id)}
-              >
-                {rota.rotulo}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div
-          role="tabpanel"
-          id={`painel-${rotaSelecionada.id}`}
-          aria-labelledby={`tab-${rotaSelecionada.id}`}
-        >
-          <PainelPercurso percurso={rotaSelecionada.percurso} />
-        </div>
-      </section>
-
-      <section className="card" aria-labelledby="guia-titulo">
-        <div className="card__header">
-          <svg className="icon icon--lg" aria-hidden="true">
-            <use href="/icons.svg#ic-estrela" />
-          </svg>
-          <div>
-            <h2 className="card__title" id="guia-titulo">
-              Guia turístico
-            </h2>
-            <p className="card__subtitle">Gerado por {resultado.diagnostico_guia.modelo}</p>
-          </div>
-        </div>
-        <div className="guia__stream" aria-live="polite" data-testid="guia-stream">
-          {textoGuia || (streamingAtivo ? "" : "Guia indisponível para este roteiro.")}
-          {streamingAtivo && <span className="guia__cursor" aria-hidden="true" />}
-        </div>
-        {resultado.diagnostico_guia.fallback_utilizado && (
-          <p className="guia__aviso">
+    <div className="lista lista--folgada resultado">
+      <div className="abas-resultado" role="tablist" aria-label="Detalhes da viagem">
+        {ABAS.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            role="tab"
+            id={`aba-${a.id}`}
+            aria-controls={`painel-${a.id}`}
+            aria-selected={aba === a.id}
+            className="aba-resultado"
+            onClick={() => setAba(a.id)}
+          >
             <svg className="icon" aria-hidden="true">
-              <use href="/icons.svg#ic-aviso" />
+              <use href={`/icons.svg#${a.icone}`} />
             </svg>
-            {resultado.diagnostico_guia.motivo ?? "O guia foi gerado com conteúdo alternativo."}
-          </p>
-        )}
+            {a.rotulo}
+          </button>
+        ))}
+      </div>
+
+      {acoes}
+
+      <section className="card viagem-topo" aria-label="Resumo da viagem">
+        <span className="pill pill--perfil">
+          {perfis} · {roteiro.dias_estadia} {roteiro.dias_estadia === 1 ? "dia" : "dias"}
+        </span>
+        <h2 className="viagem-topo__titulo">
+          <span aria-hidden="true">🚗</span> {roteiro.origem.nome} → {roteiro.destino.nome}
+        </h2>
+        <p className="card__subtitle">
+          {roteiro.rota.disponivel
+            ? `${Math.round(roteiro.rota.distancia_km ?? 0)} km · ${duracao(roteiro.rota.duracao_min)} de carro`
+            : roteiro.rota.resumo}
+        </p>
       </section>
 
-      <section className="card" aria-labelledby="atrativos-titulo">
-        <div className="card__header">
-          <svg className="icon icon--lg" aria-hidden="true">
-            <use href="/icons.svg#ic-pin" />
-          </svg>
-          <div>
-            <h2 className="card__title" id="atrativos-titulo">
-              Atrativos
-            </h2>
-            <p className="card__subtitle">
-              {resultado.atrativos.filter((atrativo) => atrativo.visitado).length} de{" "}
-              {resultado.atrativos.length} marcados como visitados
-            </p>
-          </div>
+      {aba === "visao" && (
+        <div
+          className="lista lista--folgada"
+          role="tabpanel"
+          id="painel-visao"
+          aria-labelledby="aba-visao"
+        >
+          <MapaRota
+            roteiro={roteiro}
+            mapa={mapa}
+            rotaAtiva={rotaAtiva}
+            onSelecionarRota={onSelecionarRota}
+            carregando={carregandoMapa}
+            veiculo={veiculoMapa}
+            {...(onTrocarPropulsao && { onTrocarPropulsao })}
+          />
+          <CardClima clima={roteiro.clima} destino={roteiro.destino.nome} />
+          <Guia texto={textoGuia} streaming={streaming} fallback={roteiro.guia_fallback} resumido />
+          <Catalogo
+            titulo="Pontos turísticos & atrativos"
+            icone="ic-pin"
+            itens={atrativos}
+            cidade={roteiro.destino.nome}
+            onAlternar={onAlternarVisita}
+          />
+          <Catalogo
+            titulo="Restaurantes & gastronomia"
+            icone="ic-estrela"
+            itens={gastronomia}
+            cidade={roteiro.destino.nome}
+            onAlternar={onAlternarVisita}
+          />
         </div>
+      )}
 
-        {resultado.atrativos.length === 0 ? (
-          <p className="vazio">Nenhum atrativo sugerido para este destino.</p>
-        ) : (
-          <div className="atrativos">
-            {resultado.atrativos.map((atrativo) => (
-              <CartaoAtrativo
-                key={atrativo.id}
-                atrativo={atrativo}
-                onAlternar={onAlternarAtrativo}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {aba === "guia" && (
+        <div
+          className="lista lista--folgada"
+          role="tabpanel"
+          id="painel-guia"
+          aria-labelledby="aba-guia"
+        >
+          <CardClima clima={roteiro.clima} destino={roteiro.destino.nome} />
+          <Guia
+            texto={textoGuia}
+            streaming={streaming}
+            fallback={roteiro.guia_fallback}
+            resumido={false}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,138 +1,101 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { entrarComoVisitante, obterSessao, sairDaConta } from "../services/auth";
-import type { Usuario } from "../types/schemas";
+import { CHAVES_STORAGE } from "../config";
+import { resposta, USUARIO_GOOGLE } from "../test/fixtures";
 import { useAuth } from "./useAuth";
 
-vi.mock("../services/auth", () => ({
-  entrarComoVisitante: vi.fn(),
-  obterSessao: vi.fn(),
-  sairDaConta: vi.fn(),
-}));
+const expira = new Date(Date.now() + 2 * 3600_000).toISOString();
+let fetchMock: ReturnType<typeof vi.fn>;
 
-const usuarioMock: Usuario = {
-  tipo: "visitante",
-  id: "visitante-teste",
-  nome: "Viajante Convidado",
-  email: null,
-  foto: null,
-};
+beforeEach(() => {
+  localStorage.clear();
+  fetchMock = vi.fn((url: string) => {
+    if (url.endsWith("/auth/visitante")) {
+      return Promise.resolve(
+        resposta({
+          usuario: {
+            user_id: "visitante-7",
+            nome: "Visitante",
+            tipo: "visitante",
+            expira_em: expira,
+          },
+        }),
+      );
+    }
+    if (url.endsWith("/auth/google")) {
+      return Promise.resolve(
+        resposta({ usuario: { user_id: "109876543214321", nome: "Ana Souza", tipo: "google" } }),
+      );
+    }
+    return Promise.resolve(new Response(null, { status: 204 }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("useAuth", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  it("entra como visitante com sessão de 2 horas", async () => {
+    const { result } = renderHook(() => useAuth());
+    await act(() => result.current.entrarComoVisitante());
+    expect(result.current.usuario).toMatchObject({
+      id: "visitante-7",
+      tipo: "visitante",
+      expiraEm: Date.parse(expira),
+    });
+    expect(localStorage.getItem(CHAVES_STORAGE.sessao)).toContain("visitante-7");
   });
 
-  it("consulta a sessão ao inicializar", async () => {
-    vi.mocked(obterSessao).mockResolvedValue(null);
-
+  it("sessão híbrida: guarda a conta Google e volta em 1 clique, sem novo login", async () => {
+    localStorage.setItem(CHAVES_STORAGE.sessao, JSON.stringify(USUARIO_GOOGLE));
     const { result } = renderHook(() => useAuth());
+    expect(result.current.usuario?.tipo).toBe("google");
 
-    expect(result.current.carregando).toBe(true);
+    await act(() => result.current.entrarComoVisitante());
+    expect(result.current.usuario?.tipo).toBe("visitante");
+    expect(localStorage.getItem("guia_turista_saved_google_user")).toContain("Ana Souza");
 
-    await waitFor(() => {
-      expect(result.current.carregando).toBe(false);
+    act(() => result.current.voltarParaGoogle());
+    expect(result.current.usuario?.id).toBe(USUARIO_GOOGLE.id);
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/auth/google"))).toBe(false);
+  });
+
+  it("mostra a mensagem do servidor quando o login falha", async () => {
+    fetchMock.mockResolvedValueOnce(resposta({ detail: "Token do Google inválido." }, 401));
+    const { result } = renderHook(() => useAuth());
+    await act(() => result.current.entrarComGoogle("token-ruim"));
+    expect(result.current.usuario).toBeNull();
+    expect(result.current.erro).toBe("Token do Google inválido.");
+  });
+
+  it("fechar a aba encerra o visitante por sendBeacon", async () => {
+    const beacon = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "sendBeacon", { configurable: true, value: beacon });
+    const { result } = renderHook(() => useAuth());
+    await act(() => result.current.entrarComoVisitante());
+    window.dispatchEvent(new Event("pagehide"));
+    expect(beacon).toHaveBeenCalledWith("/api/v1/auth/logout", expect.any(Blob));
+    expect(localStorage.getItem(CHAVES_STORAGE.sessao)).toBeNull();
+  });
+
+  it("sessão salva que expirou no servidor é descartada ao abrir", async () => {
+    localStorage.setItem(CHAVES_STORAGE.sessao, JSON.stringify(USUARIO_GOOGLE));
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(resposta({ detail: "Sessão expirada" }, 401)),
+    );
+    const { result } = renderHook(() => useAuth());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
     });
-
-    expect(obterSessao).toHaveBeenCalledOnce();
     expect(result.current.usuario).toBeNull();
   });
 
-  it("armazena o usuário quando existe uma sessão válida", async () => {
-    vi.mocked(obterSessao).mockResolvedValue(usuarioMock);
-
+  it("expirarVisitante encerra só o visitante", async () => {
     const { result } = renderHook(() => useAuth());
-
-    await waitFor(() => {
-      expect(result.current.usuario).toEqual(usuarioMock);
-    });
-
-    expect(result.current.erro).toBeNull();
-  });
-
-  it("registra erro quando não consegue consultar a sessão", async () => {
-    vi.mocked(obterSessao).mockRejectedValue(new Error("Falha na comunicação com o servidor."));
-
-    const { result } = renderHook(() => useAuth());
-
-    await waitFor(() => {
-      expect(result.current.carregando).toBe(false);
-    });
-
+    await act(() => result.current.entrarComoVisitante());
+    act(() => result.current.expirarVisitante());
     expect(result.current.usuario).toBeNull();
-    expect(result.current.erro).toBe("Falha na comunicação com o servidor.");
-  });
-
-  it("realiza login como visitante", async () => {
-    vi.mocked(obterSessao).mockResolvedValue(null);
-    vi.mocked(entrarComoVisitante).mockResolvedValue(usuarioMock);
-
-    const { result } = renderHook(() => useAuth());
-
-    await waitFor(() => {
-      expect(result.current.carregando).toBe(false);
-    });
-
-    await act(async () => {
-      await result.current.loginVisitante();
-    });
-
-    expect(entrarComoVisitante).toHaveBeenCalledOnce();
-    expect(result.current.usuario).toEqual(usuarioMock);
-    expect(result.current.erro).toBeNull();
-  });
-
-  it("realiza logout", async () => {
-    vi.mocked(obterSessao).mockResolvedValue(usuarioMock);
-    vi.mocked(sairDaConta).mockResolvedValue(undefined);
-
-    const { result } = renderHook(() => useAuth());
-
-    await waitFor(() => {
-      expect(result.current.usuario).toEqual(usuarioMock);
-    });
-
-    await act(async () => {
-      await result.current.logout();
-    });
-
-    expect(sairDaConta).toHaveBeenCalledOnce();
-    expect(result.current.usuario).toBeNull();
-  });
-
-  it("registra erro quando o login falha", async () => {
-    vi.mocked(obterSessao).mockResolvedValue(null);
-    vi.mocked(entrarComoVisitante).mockRejectedValue(new Error("Falha no login."));
-
-    const { result } = renderHook(() => useAuth());
-
-    await waitFor(() => {
-      expect(result.current.carregando).toBe(false);
-    });
-
-    await act(async () => {
-      await expect(result.current.loginVisitante()).rejects.toThrow("Falha no login.");
-    });
-
-    expect(result.current.erro).toBe("Falha no login.");
-  });
-
-  it("registra erro quando o logout falha", async () => {
-    vi.mocked(obterSessao).mockResolvedValue(usuarioMock);
-    vi.mocked(sairDaConta).mockRejectedValue(new Error("Falha no logout."));
-
-    const { result } = renderHook(() => useAuth());
-
-    await waitFor(() => {
-      expect(result.current.usuario).toEqual(usuarioMock);
-    });
-
-    await act(async () => {
-      await expect(result.current.logout()).rejects.toThrow("Falha no logout.");
-    });
-
-    expect(result.current.usuario).toEqual(usuarioMock);
-    expect(result.current.erro).toBe("Falha no logout.");
+    expect(result.current.erro).toMatch(/visitante terminou/);
   });
 });
