@@ -1,12 +1,17 @@
 import { API_BASE_URL } from "../config";
 
+let usuarioIdAtual: string | null = null;
+
+export function definirUsuarioApi(usuarioId: string | null): void {
+  usuarioIdAtual = usuarioId;
+}
+
 export class ApiError extends Error {
   public readonly status: number;
   public readonly details?: unknown;
 
   constructor(message: string, status: number, details?: unknown) {
     super(message);
-
     this.name = "ApiError";
     this.status = status;
 
@@ -16,17 +21,18 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Cliente HTTP compartilhado pela aplicação.
- *
- * Utiliza a URL definida em VITE_API_BASE_URL.
- * Quando vazia, utiliza a origem atual do frontend.
- */
-export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
 
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
+
+  if (usuarioIdAtual && path.startsWith("/api/v1/roteiros")) {
+    headers.set("X-User-Id", usuarioIdAtual);
+  }
 
   const response = await fetch(`${API_BASE_URL}${normalizedPath}`, {
     ...options,
@@ -59,7 +65,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
         details = await response.text();
       }
     } catch {
-      // Mantém a mensagem padrão caso não seja possível ler o erro.
+      // Mantém a mensagem padrão.
     }
 
     throw new ApiError(message, response.status, details);

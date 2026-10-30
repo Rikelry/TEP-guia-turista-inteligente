@@ -109,3 +109,31 @@ export async function sairDaConta(): Promise<void> {
     localStorage.removeItem(CHAVE_USUARIO);
   }
 }
+
+export async function entrarComGoogle(credential: string): Promise<Usuario> {
+  if (AUTH_MOCK_ENABLED) {
+    const usuario: Usuario = {
+      id: "google-mock",
+      nome: "Usuário Google de Demonstração",
+      tipo: "google",
+      email: "demo@exemplo.com",
+      foto: null,
+    };
+
+    salvarUsuario(usuario);
+    return usuario;
+  }
+
+  const resposta = await apiRequest<LoginResponse>("/api/v1/auth/google", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ credential }),
+  });
+
+  const usuario = converterUsuario(resposta.usuario);
+  salvarUsuario(usuario);
+
+  return usuario;
+}

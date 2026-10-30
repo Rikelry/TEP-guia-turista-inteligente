@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "./hooks/useAuth";
 
+import TelaLogin from "./components/TelaLogin";
+import GoogleLoginButton from "./components/GoogleLoginButton";
 import BotoesControleViagem from "./components/BotoesControleViagem";
 import Footer from "./components/Footer";
 import Header from "./components/Header";
@@ -26,6 +28,7 @@ import type {
 } from "./types/schemas";
 
 const GUIA_DEMO = `## Bem-vindo
+import type {
 
 Este é um guia de demonstração gerado localmente no frontend. Quando o
 microsserviço FastAPI estiver conectado, o texto chega em streaming via SSE.
@@ -131,7 +134,14 @@ function montarRoteiroDemo(dados: RoteiroRequest): RoteiroResposta {
 
 export function App() {
   const [tema, setTema] = useState<Tema>("claro");
-  const { usuario, loginVisitante, logout } = useAuth();
+  const {
+    usuario,
+    carregando: authCarregando,
+    erro: authErro,
+    loginVisitante,
+    loginGoogle,
+    logout,
+  } = useAuth();
   const [resultado, setResultado] = useState<RoteiroResposta | null>(null);
   const [roteiroAtivoId, setRoteiroAtivoId] = useState<string | null>(null);
   const [guiaTexto, setGuiaTexto] = useState("");
@@ -144,6 +154,22 @@ export function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", tema === "escuro" ? "dark" : "light");
   }, [tema]);
+
+  const handleLoginGoogle = async (credential: string): Promise<void> => {
+    try {
+      await loginGoogle(credential);
+    } catch {
+      // O erro já é armazenado pelo hook.
+    }
+  };
+
+  const handleEntrarVisitante = async (): Promise<void> => {
+    try {
+      await loginVisitante();
+    } catch {
+      // O erro já é armazenado pelo hook useAuth.
+    }
+  };
 
   const notificar = (tipo: ToastTipo, mensagem: string, titulo?: string): void => {
     const id = Math.random().toString(36).slice(2);
@@ -232,6 +258,25 @@ export function App() {
       notificar("error", "Não foi possível compartilhar neste navegador.");
     }
   };
+
+  if (authCarregando) {
+    return (
+      <main className="container page">
+        <p role="status">Verificando sua sessão...</p>
+      </main>
+    );
+  }
+
+  if (!usuario) {
+    return (
+      <TelaLogin
+        onEntrarVisitante={handleEntrarVisitante}
+        acaoLoginGoogle={<GoogleLoginButton onCredential={handleLoginGoogle} />}
+        carregando={authCarregando}
+        erro={authErro}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">

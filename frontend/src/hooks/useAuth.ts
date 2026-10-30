@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { entrarComoVisitante, obterSessao, sairDaConta } from "../services/auth";
+import { entrarComGoogle, entrarComoVisitante, obterSessao, sairDaConta } from "../services/auth";
 import type { Usuario } from "../types/schemas";
 
 interface UseAuthReturn {
   usuario: Usuario | null;
   carregando: boolean;
   erro: string | null;
+  loginGoogle: (credential: string) => Promise<void>;
   loginVisitante: () => Promise<void>;
   logout: () => Promise<void>;
   atualizarSessao: () => Promise<void>;
@@ -34,6 +35,23 @@ export function useAuth(): UseAuthReturn {
   useEffect(() => {
     void atualizarSessao();
   }, [atualizarSessao]);
+
+  const loginGoogle = useCallback(async (credential: string): Promise<void> => {
+    setCarregando(true);
+    setErro(null);
+
+    try {
+      const novoUsuario = await entrarComGoogle(credential);
+      setUsuario(novoUsuario);
+    } catch (error) {
+      setErro(
+        error instanceof Error ? error.message : "Não foi possível entrar com a Conta Google.",
+      );
+      throw error;
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
 
   const loginVisitante = useCallback(async (): Promise<void> => {
     setCarregando(true);
@@ -70,6 +88,7 @@ export function useAuth(): UseAuthReturn {
     carregando,
     erro,
     loginVisitante,
+    loginGoogle,
     logout,
     atualizarSessao,
   };
